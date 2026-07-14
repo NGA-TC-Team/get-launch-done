@@ -1,15 +1,18 @@
 "use client";
 
-import type { CSSProperties, ChangeEvent, DragEvent } from "react";
+import type { CSSProperties, ChangeEvent, ClipboardEvent, DragEvent } from "react";
 import { useMemo, useState } from "react";
 import { shouldRenderDeviceCutout } from "./device-mockup";
 import {
   createCssGradient,
   getSolidGradientColor,
+  normalizeHexColor,
   normalizeGradientStops,
 } from "./gradients";
 import type { GradientConfig, GradientStop, GradientType } from "./gradients";
-import { buildPromptForSlot, buildPromptForSlots } from "./prompt-copy";
+import { platformDefs } from "./platforms";
+import type { PlatformDef, PlatformKey } from "./platforms";
+import { buildPromptForSlot, buildPromptForSlots, parsePromptJson } from "./prompt-copy";
 import {
   DEFAULT_COPY,
   DEFAULT_TEMPLATE_SEQUENCE,
@@ -26,22 +29,9 @@ const TOTAL_SLOTS = DEFAULT_COPY.length;
 const MIN_GRADIENT_STOPS = 2;
 const MAX_GRADIENT_STOPS = 5;
 
-type PlatformKey = "ios" | "android";
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
-
-type PlatformDef = {
-  label: string;
-  store: string;
-  storeSlug: string;
-  sizeLabel: string;
-  width: number;
-  height: number;
-  ratio: string;
-  cardWidth: number;
-  deviceClass: string;
-};
 
 type Slot = {
   title: string;
@@ -86,31 +76,6 @@ function createGradientStops(a: string, b: string): GradientStop[] {
   ];
 }
 
-const platformDefs: Record<PlatformKey, PlatformDef> = {
-  ios: {
-    label: "iOS",
-    store: "앱스토어",
-    storeSlug: "app-store",
-    sizeLabel: "앱스토어 내보내기: 1290 x 2796",
-    width: 1290,
-    height: 2796,
-    ratio: "1290 / 2796",
-    cardWidth: 286,
-    deviceClass: "ios",
-  },
-  android: {
-    label: "Android",
-    store: "구글 플레이",
-    storeSlug: "google-play",
-    sizeLabel: "구글 플레이 내보내기: 1080 x 1920",
-    width: 1080,
-    height: 1920,
-    ratio: "1080 / 1920",
-    cardWidth: 312,
-    deviceClass: "android",
-  },
-};
-
 function createInitialSlots(): Slot[] {
   return Array.from({ length: TOTAL_SLOTS }, (_, index) => ({
     title: DEFAULT_COPY[index][0],
@@ -128,11 +93,13 @@ export default function Page() {
   const [gradientType, setGradientType] = useState<GradientType>("linear");
   const [gradientAngle, setGradientAngle] = useState(135);
   const [gradientStops, setGradientStops] = useState<GradientStop[]>(() => createGradientStops("#22c55e", "#111827"));
+  const [gradientHexDrafts, setGradientHexDrafts] = useState<Record<string, string>>({});
   const [hideDeviceCutout, setHideDeviceCutout] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [selected, setSelected] = useState(0);
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
+  const [promptJsonInput, setPromptJsonInput] = useState("");
   const [status, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
@@ -213,6 +180,29 @@ export default function Page() {
     setGradientStops((current) =>
       current.map((stop) => (stop.id === id ? { ...stop, ...update } : stop)),
     );
+  }
+
+  function updateGradientStopColor(id: string, color: string) {
+    updateGradientStop(id, { color });
+    setGradientHexDrafts((current) => ({ ...current, [id]: color }));
+  }
+
+  function updateGradientStopHex(id: string, value: string) {
+    setGradientHexDrafts((current) => ({ ...current, [id]: value }));
+    const normalized = normalizeHexColor(value);
+    if (normalized) {
+      updateGradientStop(id, { color: normalized });
+      setGradientHexDrafts((current) => ({ ...current, [id]: normalized }));
+    }
+  }
+
+  function commitGradientStopHex(stop: GradientStop) {
+    const draft = gradientHexDrafts[stop.id];
+    const normalized = draft ? normalizeHexColor(draft) : null;
+    setGradientHexDrafts((current) => ({
+      ...current,
+      [stop.id]: normalized ?? stop.color,
+    }));
   }
 
   function addGradientStop() {
@@ -357,6 +347,42 @@ export default function Page() {
     setStatus(copied ? "01~10 전체 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
   }
 
+  function applyPromptJsonText(text: string) {
+    setPromptJsonInput(text);
+    const result = parsePromptJson(text, TOTAL_SLOTS);
+
+    if (!result.ok) {
+      setStatus(`JSON 적용 실패: ${result.error}`);
+      return;
+    }
+
+    if (result.type === "single") {
+      updateSelectedSlot({ title: result.title, subtitle: result.subtitle });
+      setStatus("붙여넣은 JSON을 선택한 화면에 적용했습니다.");
+      return;
+    }
+
+    const screensByPage = new Map(result.screens.map((screen) => [screen.page, screen]));
+    setSlots((current) =>
+      current.map((slot, index) => {
+        const screen = screensByPage.get(index + 1);
+        return screen ? { ...slot, title: screen.title, subtitle: screen.subtitle } : slot;
+      }),
+    );
+    setSelected(result.screens[0].page - 1);
+    setStatus(`${result.screens.length}개 화면에 프롬프트 JSON을 적용했습니다.`);
+  }
+
+  function handlePromptJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const text = event.clipboardData.getData("text");
+    if (!text.trim()) {
+      return;
+    }
+
+    event.preventDefault();
+    applyPromptJsonText(text);
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -496,7 +522,7 @@ export default function Page() {
                       aria-label={`${stop.position}% 컬러`}
                       type="color"
                       value={stop.color}
-                      onChange={(event) => updateGradientStop(stop.id, { color: event.target.value })}
+                      onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
                     />
                     <input
                       aria-label={`${stop.color} 위치`}
@@ -513,6 +539,14 @@ export default function Page() {
                       max={100}
                       value={stop.position}
                       onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                    />
+                    <input
+                      className="hex-input"
+                      aria-label={`${stop.color} HEX 값`}
+                      spellCheck={false}
+                      value={gradientHexDrafts[stop.id] ?? stop.color}
+                      onBlur={() => commitGradientStopHex(stop)}
+                      onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
                     />
                     <button
                       className="text-action stop-remove"
@@ -532,7 +566,15 @@ export default function Page() {
               <input
                 type="color"
                 value={getSolidGradientColor(gradientConfig)}
-                onChange={(event) => updateGradientStop(gradientConfig.stops[0].id, { color: event.target.value })}
+                onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
+              />
+              <input
+                className="hex-input"
+                aria-label="단색 HEX 값"
+                spellCheck={false}
+                value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
+                onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
+                onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
               />
             </label>
           )}
@@ -580,7 +622,24 @@ export default function Page() {
               01~10 전체 프롬프트 복사
             </button>
           </div>
-          <p className="hint">프로젝트 폴더에서 AI 에이전트에게 전달할 선택 화면 또는 전체 화면용 프롬프트를 복사합니다.</p>
+          <label className="field">
+            <span>프롬프트 결과 JSON</span>
+            <textarea
+              className="json-paste-area"
+              rows={5}
+              spellCheck={false}
+              value={promptJsonInput}
+              placeholder='{"title":"제목","subtitle":"설명"}'
+              onPaste={handlePromptJsonPaste}
+              onChange={(event) => setPromptJsonInput(event.target.value)}
+            />
+          </label>
+          <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
+            JSON 적용
+          </button>
+          <p className="hint">
+            복사한 프롬프트의 JSON 결과를 붙여넣으면 선택 화면 또는 01~10 전체 화면 문구에 바로 적용됩니다.
+          </p>
         </section>
 
         <section className="panel-section export-panel">

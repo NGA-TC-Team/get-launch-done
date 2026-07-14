@@ -36,6 +36,18 @@ export function getSolidGradientColor(config: GradientConfig) {
   return normalizeGradientStops(config.stops)[0]?.color ?? "#111111";
 }
 
+export function normalizeHexColor(input: string) {
+  const value = input.trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(value)) {
+    const [r, g, b] = value.toLowerCase().split("");
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(value)) {
+    return `#${value.toLowerCase()}`;
+  }
+  return null;
+}
+
 function clampStopPosition(position: number) {
   if (!Number.isFinite(position)) {
     return 0;

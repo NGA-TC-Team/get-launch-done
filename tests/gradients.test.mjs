@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createCssGradient, normalizeGradientStops } from "../src/app/gradients";
+import { createCssGradient, normalizeGradientStops, normalizeHexColor } from "../src/app/gradients";
 
 describe("gradient helpers", () => {
   test("컬러 스탑을 위치 순서대로 정렬하고 0~100 범위로 제한한다", () => {
@@ -40,5 +40,11 @@ describe("gradient helpers", () => {
     });
 
     expect(gradient).toBe("radial-gradient(circle at center, #111111 0%, #ffffff 100%)");
+  });
+
+  test("HEX 컬러 입력을 6자리 소문자 HEX 값으로 정규화한다", () => {
+    expect(normalizeHexColor("#ABC")).toBe("#aabbcc");
+    expect(normalizeHexColor("22C55E")).toBe("#22c55e");
+    expect(normalizeHexColor("#not-hex")).toBeNull();
   });
 });

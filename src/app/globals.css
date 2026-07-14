@@ -748,6 +748,13 @@ textarea:focus-visible,
   margin-top: 12px;
 }
 
+.json-paste-area {
+  min-height: 118px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .gradient-editor {
   display: grid;
   gap: 10px;
@@ -798,6 +805,20 @@ textarea:focus-visible,
   background: #171717;
   color: #f7f7f7;
   padding: 0 7px;
+  font-weight: 900;
+}
+
+.hex-input {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #3d3d3d;
+  border-radius: 8px;
+  background: #171717;
+  color: #f7f7f7;
+  padding: 0 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
   font-weight: 900;
 }
 
