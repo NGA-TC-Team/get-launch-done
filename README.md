@@ -1,6 +1,7 @@
 # StoreShot
 
 Next.js app for creating App Store and Google Play preview screenshots.
+Application code lives under `src/app`.
 
 Features:
 
