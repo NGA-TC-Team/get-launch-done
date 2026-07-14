@@ -7,6 +7,8 @@ Features:
 
 - 10 screenshot pages by default.
 - iOS and Android mockup frames.
+- Korean monochrome workspace UI with color screenshot themes.
+- 30 reusable screenshot layout templates.
 - Drag and drop or upload PNG/JPG screenshots into each device frame.
 - Per-page PNG/JPG format selection.
 - Client-side ZIP export with store-ready rendered images.
