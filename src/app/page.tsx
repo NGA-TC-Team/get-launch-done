@@ -2,6 +2,14 @@
 
 import type { CSSProperties, ChangeEvent, DragEvent } from "react";
 import { useMemo, useState } from "react";
+import { shouldRenderDeviceCutout } from "./device-mockup";
+import {
+  createCssGradient,
+  getSolidGradientColor,
+  normalizeGradientStops,
+} from "./gradients";
+import type { GradientConfig, GradientStop, GradientType } from "./gradients";
+import { buildPromptForSlot, buildPromptForSlots } from "./prompt-copy";
 import {
   DEFAULT_COPY,
   DEFAULT_TEMPLATE_SEQUENCE,
@@ -12,8 +20,11 @@ import {
   getThemeById,
 } from "./templates";
 import type { ScreenshotTemplate, ScreenshotTheme, TemplateFamily, TemplateId, ThemeId } from "./templates";
+import { applyLoadedImagesToSlots } from "./slot-images";
 
 const TOTAL_SLOTS = DEFAULT_COPY.length;
+const MIN_GRADIENT_STOPS = 2;
+const MAX_GRADIENT_STOPS = 5;
 
 type PlatformKey = "ios" | "android";
 type BackgroundMode = "tonal" | "solid";
@@ -68,6 +79,13 @@ type ZipFile = {
 
 type CSSVars = CSSProperties & Record<`--${string}`, string | number>;
 
+function createGradientStops(a: string, b: string): GradientStop[] {
+  return [
+    { id: "stop-1", color: a, position: 0 },
+    { id: "stop-2", color: b, position: 100 },
+  ];
+}
+
 const platformDefs: Record<PlatformKey, PlatformDef> = {
   ios: {
     label: "iOS",
@@ -107,22 +125,37 @@ export default function Page() {
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
+  const [gradientType, setGradientType] = useState<GradientType>("linear");
+  const [gradientAngle, setGradientAngle] = useState(135);
+  const [gradientStops, setGradientStops] = useState<GradientStop[]>(() => createGradientStops("#22c55e", "#111827"));
+  const [hideDeviceCutout, setHideDeviceCutout] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [selected, setSelected] = useState(0);
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
   const [status, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
+  const [isStageDragging, setIsStageDragging] = useState(false);
 
   const platform = platformDefs[platformKey];
   const theme = getThemeById(themeId);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
+  const gradientConfig = useMemo<GradientConfig>(
+    () => ({
+      type: gradientType,
+      angle: gradientAngle,
+      stops: normalizeGradientStops(gradientStops),
+    }),
+    [gradientAngle, gradientStops, gradientType],
+  );
+  const previewBackground = bgMode === "solid" ? getSolidGradientColor(gradientConfig) : createCssGradient(gradientConfig);
 
   const stageStyle = useMemo<CSSVars>(
     () => ({
       "--shot-ratio": platform.ratio,
       "--card-width": `${platform.cardWidth}px`,
+      "--preview-background": previewBackground,
       "--preview-a": theme.a,
       "--preview-b": bgMode === "solid" ? theme.a : theme.b,
       "--preview-ink": theme.foreground,
@@ -130,7 +163,7 @@ export default function Page() {
       "--preview-panel": theme.panel,
       "--device-ratio": `${IPHONE_17_PRO_DEVICE.widthMm} / ${IPHONE_17_PRO_DEVICE.heightMm}`,
     }),
-    [bgMode, platform.cardWidth, platform.ratio, theme],
+    [bgMode, platform.cardWidth, platform.ratio, previewBackground, theme],
   );
 
   async function assignFiles(startIndex: number, files: File[]) {
@@ -148,18 +181,7 @@ export default function Page() {
       })),
     );
 
-    setSlots((current) =>
-      current.map((slot, index) => {
-        const loadedIndex = index - startIndex;
-        if (loadedIndex < 0 || loadedIndex >= loaded.length) {
-          return slot;
-        }
-        return {
-          ...slot,
-          ...loaded[loadedIndex],
-        };
-      }),
-    );
+    setSlots((current) => applyLoadedImagesToSlots(current, startIndex, loaded));
     setSelected(Math.min(startIndex + loaded.length - 1, TOTAL_SLOTS - 1));
     setStatus(`${loaded.length}개의 이미지를 추가했습니다.`);
   }
@@ -179,6 +201,41 @@ export default function Page() {
   function applyTemplateToAll(templateId: TemplateId) {
     setSlots((current) => current.map((slot) => ({ ...slot, templateId })));
     setStatus("선택한 템플릿을 모든 화면에 적용했습니다.");
+  }
+
+  function applyScreenshotTheme(nextThemeId: ThemeId) {
+    const nextTheme = getThemeById(nextThemeId);
+    setThemeId(nextThemeId);
+    setGradientStops(createGradientStops(nextTheme.a, nextTheme.b));
+  }
+
+  function updateGradientStop(id: string, update: Partial<Pick<GradientStop, "color" | "position">>) {
+    setGradientStops((current) =>
+      current.map((stop) => (stop.id === id ? { ...stop, ...update } : stop)),
+    );
+  }
+
+  function addGradientStop() {
+    setGradientStops((current) => {
+      if (current.length >= MAX_GRADIENT_STOPS) {
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          id: `stop-${Date.now()}`,
+          color: current[current.length - 1]?.color ?? theme.a,
+          position: 50,
+        },
+      ];
+    });
+  }
+
+  function removeGradientStop(id: string) {
+    setGradientStops((current) =>
+      current.length <= MIN_GRADIENT_STOPS ? current : current.filter((stop) => stop.id !== id),
+    );
   }
 
   function resetCopy() {
@@ -207,6 +264,8 @@ export default function Page() {
           template: getTemplateById(slot.templateId),
           bgMode,
           theme,
+          gradientConfig,
+          hideDeviceCutout,
           exportFormat,
           jpgQuality,
         });
@@ -242,6 +301,40 @@ export default function Page() {
     }
   }
 
+  function handleStageDragEnter(event: DragEvent<HTMLElement>) {
+    if (!hasFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    setIsStageDragging(true);
+  }
+
+  function handleStageDragOver(event: DragEvent<HTMLElement>) {
+    if (!hasFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsStageDragging(true);
+  }
+
+  function handleStageDragLeave(event: DragEvent<HTMLElement>) {
+    const relatedTarget = event.relatedTarget;
+    if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
+      setIsStageDragging(false);
+    }
+  }
+
+  function handleStageDrop(event: DragEvent<HTMLElement>) {
+    if (!hasFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    setIsStageDragging(false);
+    setDraggingSlot(null);
+    void assignFiles(0, Array.from(event.dataTransfer.files));
+  }
+
   async function copySelectedPrompt() {
     const prompt = buildPromptForSlot({
       slot: selectedSlot,
@@ -252,6 +345,16 @@ export default function Page() {
     });
     const copied = await copyText(prompt);
     setStatus(copied ? "선택한 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
+  }
+
+  async function copyAllPrompts() {
+    const prompt = buildPromptForSlots({
+      slots,
+      templates: SCREENSHOT_TEMPLATES,
+      platform,
+    });
+    const copied = await copyText(prompt);
+    setStatus(copied ? "01~10 전체 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
   }
 
   return (
@@ -280,6 +383,19 @@ export default function Page() {
             ))}
           </div>
           <p className="hint">{platform.sizeLabel}</p>
+        </section>
+
+        <section className="panel-section">
+          <div className="section-label">목업 표시</div>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={hideDeviceCutout}
+              onChange={(event) => setHideDeviceCutout(event.target.checked)}
+            />
+            <span>카메라/아일랜드 숨김</span>
+          </label>
+          <p className="hint">iOS는 다이내믹 아일랜드, Android는 중앙 카메라를 숨깁니다.</p>
         </section>
 
         <section className="panel-section">
@@ -337,10 +453,89 @@ export default function Page() {
                 style={{ "--a": screenshotTheme.a, "--b": screenshotTheme.b } as CSSVars}
                 title={screenshotTheme.label}
                 aria-label={screenshotTheme.label}
-                onClick={() => setThemeId(screenshotTheme.id)}
+                onClick={() => applyScreenshotTheme(screenshotTheme.id)}
               />
             ))}
           </div>
+          {bgMode === "tonal" ? (
+            <div className="gradient-editor">
+              <label className="field">
+                <span>그라데이션 종류</span>
+                <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
+                  <option value="linear">선형</option>
+                  <option value="radial">방사형</option>
+                </select>
+              </label>
+              {gradientType === "linear" ? (
+                <label className="field">
+                  <span>각도</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    value={gradientAngle}
+                    onChange={(event) => setGradientAngle(Number(event.target.value))}
+                  />
+                </label>
+              ) : null}
+              <div className="gradient-heading">
+                <span>컬러 스탑</span>
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={addGradientStop}
+                  disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
+                >
+                  스탑 추가
+                </button>
+              </div>
+              <div className="gradient-stop-list">
+                {normalizeGradientStops(gradientStops).map((stop) => (
+                  <div className="gradient-stop-row" key={stop.id}>
+                    <input
+                      aria-label={`${stop.position}% 컬러`}
+                      type="color"
+                      value={stop.color}
+                      onChange={(event) => updateGradientStop(stop.id, { color: event.target.value })}
+                    />
+                    <input
+                      aria-label={`${stop.color} 위치`}
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={stop.position}
+                      onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                    />
+                    <input
+                      aria-label={`${stop.color} 위치 값`}
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={stop.position}
+                      onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                    />
+                    <button
+                      className="text-action stop-remove"
+                      type="button"
+                      onClick={() => removeGradientStop(stop.id)}
+                      disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <label className="field color-field">
+              <span>단색 컬러</span>
+              <input
+                type="color"
+                value={getSolidGradientColor(gradientConfig)}
+                onChange={(event) => updateGradientStop(gradientConfig.stops[0].id, { color: event.target.value })}
+              />
+            </label>
+          )}
           <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
         </section>
 
@@ -377,10 +572,15 @@ export default function Page() {
               onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
             />
           </label>
-          <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
-            프롬프트 복사하기
-          </button>
-          <p className="hint">프로젝트 폴더에서 AI 에이전트에게 전달할 선택 화면용 프롬프트를 복사합니다.</p>
+          <div className="prompt-actions">
+            <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
+              선택 화면 프롬프트 복사
+            </button>
+            <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
+              01~10 전체 프롬프트 복사
+            </button>
+          </div>
+          <p className="hint">프로젝트 폴더에서 AI 에이전트에게 전달할 선택 화면 또는 전체 화면용 프롬프트를 복사합니다.</p>
         </section>
 
         <section className="panel-section export-panel">
@@ -405,7 +605,7 @@ export default function Page() {
           <button className="primary-action" type="button" onClick={exportZip}>
             ZIP 내보내기
           </button>
-          <label className="secondary-action upload-button" htmlFor="bulk-input">
+          <label className="secondary-action bulk-upload-button" htmlFor="bulk-input">
             이미지 일괄 추가
           </label>
           <input
@@ -443,7 +643,14 @@ export default function Page() {
           </div>
         </header>
 
-        <section className="stage-wrap" aria-label="스크린샷 미리보기">
+        <section
+          className={`stage-wrap ${isStageDragging ? "is-stage-dragging" : ""}`}
+          aria-label="스크린샷 미리보기"
+          onDragEnter={handleStageDragEnter}
+          onDragOver={handleStageDragOver}
+          onDragLeave={handleStageDragLeave}
+          onDrop={handleStageDrop}
+        >
           <div className="stage" style={stageStyle}>
             {slots.map((slot, index) => {
               const template = getTemplateById(slot.templateId);
@@ -465,17 +672,24 @@ export default function Page() {
                     onFocus={() => setSelected(index)}
                     onDragEnter={(event) => {
                       event.preventDefault();
+                      event.stopPropagation();
+                      setIsStageDragging(false);
                       setDraggingSlot(index);
                     }}
                     onDragOver={(event) => {
                       event.preventDefault();
+                      event.stopPropagation();
+                      event.dataTransfer.dropEffect = "copy";
+                      setIsStageDragging(false);
                       setDraggingSlot(index);
                     }}
                     onDragLeave={handleDragLeave}
                     onDrop={(event) => {
                       event.preventDefault();
+                      event.stopPropagation();
                       setDraggingSlot(null);
-                      assignFiles(index, Array.from(event.dataTransfer.files));
+                      setIsStageDragging(false);
+                      void assignFiles(index, Array.from(event.dataTransfer.files));
                     }}
                   >
                     <div className="copy-block">
@@ -493,14 +707,11 @@ export default function Page() {
                           <div className="empty-screen">이미지를 놓으세요</div>
                         )}
                       </div>
-                      <div className="device-camera" />
+                      {shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
                     </div>
                     <div className="drop-indicator">여기에 이미지 놓기</div>
                   </div>
                   <div className="shot-footer">
-                    <label className="upload-button" htmlFor={`slot-file-${index}`}>
-                      업로드
-                    </label>
                     <select
                       className="template-select"
                       aria-label={`${index + 1}번 템플릿 선택`}
@@ -514,13 +725,6 @@ export default function Page() {
                       ))}
                     </select>
                     <span className="file-name">{slot.imageName || "이미지 없음"}</span>
-                    <input
-                      id={`slot-file-${index}`}
-                      className="visually-hidden"
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      onChange={(event) => handleSlotInput(event, index, assignFiles)}
-                    />
                   </div>
                 </article>
               );
@@ -530,17 +734,6 @@ export default function Page() {
       </main>
     </div>
   );
-}
-
-function handleSlotInput(
-  event: ChangeEvent<HTMLInputElement>,
-  index: number,
-  assignFiles: (startIndex: number, files: File[]) => Promise<void>,
-) {
-  if (event.target.files?.length) {
-    void assignFiles(index, Array.from(event.target.files));
-  }
-  event.target.value = "";
 }
 
 function handleBulkInput(
@@ -553,6 +746,10 @@ function handleBulkInput(
   event.target.value = "";
 }
 
+function hasFileDrag(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -560,37 +757,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-function buildPromptForSlot({
-  slot,
-  template,
-  platform,
-  pageNumber,
-  totalPages,
-}: {
-  slot: Slot;
-  template: ScreenshotTemplate;
-  platform: PlatformDef;
-  pageNumber: number;
-  totalPages: number;
-}) {
-  return [
-    "# StoreShot 스크린샷 문구 작성 요청",
-    "",
-    `대상 화면: ${pageNumber}/${totalPages}`,
-    `제출 플랫폼: ${platform.store} (${platform.label})`,
-    `현재 템플릿: ${template.label}`,
-    `템플릿 ID: ${template.id}`,
-    "",
-    "현재 임시 문구:",
-    `제목: ${slot.title}`,
-    `설명: ${slot.subtitle}`,
-    "",
-    "아래 템플릿 프롬프트를 기준으로 이 프로젝트에 맞는 스토어 스크린샷 문구를 작성해줘.",
-    "",
-    template.prompt,
-  ].join("\n");
 }
 
 async function copyText(text: string) {
@@ -622,6 +788,8 @@ async function renderSlotToBlob({
   template,
   bgMode,
   theme,
+  gradientConfig,
+  hideDeviceCutout,
   exportFormat,
   jpgQuality,
 }: {
@@ -631,6 +799,8 @@ async function renderSlotToBlob({
   template: ScreenshotTemplate;
   bgMode: BackgroundMode;
   theme: ScreenshotTheme;
+  gradientConfig: GradientConfig;
+  hideDeviceCutout: boolean;
   exportFormat: ExportFormat;
   jpgQuality: number;
 }): Promise<Blob> {
@@ -641,8 +811,8 @@ async function renderSlotToBlob({
   if (!ctx) {
     throw new Error("Canvas is unavailable");
   }
-  drawBackground(ctx, canvas.width, canvas.height, theme, bgMode);
-  await drawTemplate(ctx, canvas, slot, index, platform, template, theme);
+  drawBackground(ctx, canvas.width, canvas.height, bgMode, gradientConfig);
+  await drawTemplate(ctx, canvas, slot, index, platform, template, theme, hideDeviceCutout);
   const mime = exportFormat === "jpg" ? "image/jpeg" : "image/png";
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -667,6 +837,7 @@ async function drawTemplate(
   platform: PlatformDef,
   template: ScreenshotTemplate,
   theme: ScreenshotTheme,
+  hideDeviceCutout: boolean,
 ) {
   const w = canvas.width;
   const h = canvas.height;
@@ -685,9 +856,10 @@ async function drawTemplate(
       { x: -phone.width / 2, y: -phone.height / 2, width: phone.width, height: phone.height },
       platform,
       slot.imageDataUrl,
+      hideDeviceCutout,
     );
   } else {
-    await drawPhone(ctx, phone, platform, slot.imageDataUrl);
+    await drawPhone(ctx, phone, platform, slot.imageDataUrl, hideDeviceCutout);
   }
   ctx.restore();
 
@@ -702,19 +874,38 @@ function drawBackground(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  theme: ScreenshotTheme,
   mode: BackgroundMode,
+  gradientConfig: GradientConfig,
 ) {
   if (mode === "solid") {
-    ctx.fillStyle = theme.a;
+    ctx.fillStyle = getSolidGradientColor(gradientConfig);
     ctx.fillRect(0, 0, w, h);
     return;
   }
-  const gradient = ctx.createLinearGradient(0, 0, w, h);
-  gradient.addColorStop(0, theme.a);
-  gradient.addColorStop(1, theme.b);
+  const gradient = createCanvasGradient(ctx, w, h, gradientConfig);
+  normalizeGradientStops(gradientConfig.stops).forEach((stop) => {
+    gradient.addColorStop(stop.position / 100, stop.color);
+  });
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, w, h);
+}
+
+function createCanvasGradient(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  gradientConfig: GradientConfig,
+) {
+  if (gradientConfig.type === "radial") {
+    const radius = Math.max(w, h) * 0.72;
+    return ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, radius);
+  }
+
+  const radians = ((gradientConfig.angle - 90) * Math.PI) / 180;
+  const half = Math.sqrt(w * w + h * h) / 2;
+  const dx = Math.cos(radians) * half;
+  const dy = Math.sin(radians) * half;
+  return ctx.createLinearGradient(w / 2 - dx, h / 2 - dy, w / 2 + dx, h / 2 + dy);
 }
 
 function drawFrameLines(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {
@@ -823,6 +1014,7 @@ async function drawPhone(
   rect: Rect,
   platform: PlatformDef,
   dataUrl: string,
+  hideDeviceCutout: boolean,
 ) {
   const r = rect.width * (platform.deviceClass === "ios" ? 0.12 : 0.09);
   ctx.save();
@@ -860,20 +1052,22 @@ async function drawPhone(
   }
   ctx.restore();
 
-  ctx.save();
-  ctx.fillStyle = "#050505";
-  if (platform.deviceClass === "ios") {
-    const islandW = rect.width * 0.28;
-    const islandH = rect.height * 0.033;
-    roundRect(ctx, rect.x + rect.width / 2 - islandW / 2, rect.y + rect.height * 0.045, islandW, islandH, islandH / 2);
-    ctx.fill();
-  } else {
-    const cameraR = rect.width * 0.026;
-    ctx.beginPath();
-    ctx.arc(rect.x + rect.width / 2, rect.y + rect.height * 0.052, cameraR, 0, Math.PI * 2);
-    ctx.fill();
+  if (shouldRenderDeviceCutout(hideDeviceCutout)) {
+    ctx.save();
+    ctx.fillStyle = "#050505";
+    if (platform.deviceClass === "ios") {
+      const islandW = rect.width * 0.28;
+      const islandH = rect.height * 0.033;
+      roundRect(ctx, rect.x + rect.width / 2 - islandW / 2, rect.y + rect.height * 0.045, islandW, islandH, islandH / 2);
+      ctx.fill();
+    } else {
+      const cameraR = rect.width * 0.026;
+      ctx.beginPath();
+      ctx.arc(rect.x + rect.width / 2, rect.y + rect.height * 0.052, cameraR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function drawEmptyScreen(ctx: CanvasRenderingContext2D, screen: Rect) {
