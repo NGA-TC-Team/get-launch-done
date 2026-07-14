@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_TEMPLATE_SEQUENCE,
+  IPHONE_17_PRO_DEVICE,
+  IPHONE_17_PRO_DISPLAY,
   SCREENSHOT_TEMPLATES,
   SCREENSHOT_THEMES,
   getTemplateById,
@@ -39,6 +41,28 @@ describe("SCREENSHOT_TEMPLATES", () => {
 
     expect(SCREENSHOT_THEMES.length).toBeGreaterThanOrEqual(8);
     expect(colorfulThemes.length).toBeGreaterThanOrEqual(6);
+  });
+
+  test("모든 템플릿은 AI 에이전트에게 전달할 수 있는 작성 프롬프트를 가진다", () => {
+    for (const template of SCREENSHOT_TEMPLATES) {
+      expect(template.prompt).toContain(template.label);
+      expect(template.prompt).toContain("프로젝트");
+      expect(template.prompt).toContain("제목");
+      expect(template.prompt).toContain("설명");
+      expect(template.prompt.length).toBeGreaterThan(180);
+    }
+  });
+
+  test("iPhone 17 Pro 디스플레이 비율을 목업 기준값으로 제공한다", () => {
+    expect(IPHONE_17_PRO_DISPLAY.width).toBe(1206);
+    expect(IPHONE_17_PRO_DISPLAY.height).toBe(2622);
+    expect(IPHONE_17_PRO_DISPLAY.aspectRatio).toBeCloseTo(1206 / 2622, 5);
+  });
+
+  test("iPhone 17 Pro 외곽 프레임은 실측 기기 비율을 기준으로 한다", () => {
+    expect(IPHONE_17_PRO_DEVICE.widthMm).toBe(71.9);
+    expect(IPHONE_17_PRO_DEVICE.heightMm).toBe(150);
+    expect(IPHONE_17_PRO_DEVICE.aspectRatio).toBeCloseTo(71.9 / 150, 5);
   });
 });
 

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   DEFAULT_COPY,
   DEFAULT_TEMPLATE_SEQUENCE,
+  IPHONE_17_PRO_DEVICE,
   SCREENSHOT_THEMES,
   SCREENSHOT_TEMPLATES,
   getTemplateById,
@@ -34,7 +35,6 @@ type PlatformDef = {
 type Slot = {
   title: string;
   subtitle: string;
-  format: ExportFormat;
   imageDataUrl: string;
   imageName: string;
   templateId: TemplateId;
@@ -97,7 +97,6 @@ function createInitialSlots(): Slot[] {
   return Array.from({ length: TOTAL_SLOTS }, (_, index) => ({
     title: DEFAULT_COPY[index][0],
     subtitle: DEFAULT_COPY[index][1],
-    format: "png",
     imageDataUrl: "",
     imageName: "",
     templateId: DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length],
@@ -108,6 +107,7 @@ export default function Page() {
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [selected, setSelected] = useState(0);
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
@@ -128,6 +128,7 @@ export default function Page() {
       "--preview-ink": theme.foreground,
       "--preview-muted": theme.muted,
       "--preview-panel": theme.panel,
+      "--device-ratio": `${IPHONE_17_PRO_DEVICE.widthMm} / ${IPHONE_17_PRO_DEVICE.heightMm}`,
     }),
     [bgMode, platform.cardWidth, platform.ratio, theme],
   );
@@ -169,12 +170,6 @@ export default function Page() {
     );
   }
 
-  function updateSlotFormat(index: number, format: ExportFormat) {
-    setSlots((current) =>
-      current.map((slot, slotIndex) => (slotIndex === index ? { ...slot, format } : slot)),
-    );
-  }
-
   function updateSlotTemplate(index: number, templateId: TemplateId) {
     setSlots((current) =>
       current.map((slot, slotIndex) => (slotIndex === index ? { ...slot, templateId } : slot)),
@@ -212,9 +207,10 @@ export default function Page() {
           template: getTemplateById(slot.templateId),
           bgMode,
           theme,
+          exportFormat,
           jpgQuality,
         });
-        const extension = slot.format === "jpg" ? "jpg" : "png";
+        const extension = exportFormat;
         files.push({
           name: `${platform.storeSlug}-${String(index + 1).padStart(2, "0")}.${extension}`,
           data: new Uint8Array(await blob.arrayBuffer()),
@@ -244,6 +240,18 @@ export default function Page() {
     if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
       setDraggingSlot(null);
     }
+  }
+
+  async function copySelectedPrompt() {
+    const prompt = buildPromptForSlot({
+      slot: selectedSlot,
+      template: selectedTemplate,
+      platform,
+      pageNumber: selected + 1,
+      totalPages: TOTAL_SLOTS,
+    });
+    const copied = await copyText(prompt);
+    setStatus(copied ? "선택한 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
   }
 
   return (
@@ -369,16 +377,10 @@ export default function Page() {
               onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
             />
           </label>
-          <label className="field">
-            <span>파일 형식</span>
-            <select
-              value={selectedSlot.format}
-              onChange={(event) => updateSelectedSlot({ format: event.target.value as ExportFormat })}
-            >
-              <option value="png">PNG</option>
-              <option value="jpg">JPG</option>
-            </select>
-          </label>
+          <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
+            프롬프트 복사하기
+          </button>
+          <p className="hint">프로젝트 폴더에서 AI 에이전트에게 전달할 선택 화면용 프롬프트를 복사합니다.</p>
         </section>
 
         <section className="panel-section export-panel">
@@ -392,6 +394,13 @@ export default function Page() {
               value={Math.round(jpgQuality * 100)}
               onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
             />
+          </label>
+          <label className="field">
+            <span>이미지 형식</span>
+            <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
+              <option value="png">PNG</option>
+              <option value="jpg">JPG</option>
+            </select>
           </label>
           <button className="primary-action" type="button" onClick={exportZip}>
             ZIP 내보내기
@@ -421,6 +430,13 @@ export default function Page() {
             <button className="secondary-action" type="button" onClick={resetCopy}>
               기본값 복원
             </button>
+            <label className="topbar-format">
+              <span>이미지 형식</span>
+              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+              </select>
+            </label>
             <button className="primary-action" type="button" onClick={exportZip}>
               ZIP 내보내기
             </button>
@@ -441,15 +457,6 @@ export default function Page() {
                     <button className="slot-button" type="button" onClick={() => setSelected(index)}>
                       {String(index + 1).padStart(2, "0")}번 · {template.label}
                     </button>
-                    <select
-                      className="format-select"
-                      aria-label="파일 형식"
-                      value={slot.format}
-                      onChange={(event) => updateSlotFormat(index, event.target.value as ExportFormat)}
-                    >
-                      <option value="png">PNG</option>
-                      <option value="jpg">JPG</option>
-                    </select>
                   </div>
                   <div
                     className={`shot-preview ${draggingSlot === index ? "is-dragging" : ""}`}
@@ -494,13 +501,18 @@ export default function Page() {
                     <label className="upload-button" htmlFor={`slot-file-${index}`}>
                       업로드
                     </label>
-                    <button
-                      className="template-cycle"
-                      type="button"
-                      onClick={() => updateSlotTemplate(index, nextTemplateId(slot.templateId))}
+                    <select
+                      className="template-select"
+                      aria-label={`${index + 1}번 템플릿 선택`}
+                      value={slot.templateId}
+                      onChange={(event) => updateSlotTemplate(index, event.target.value as TemplateId)}
                     >
-                      템플릿 변경
-                    </button>
+                      {SCREENSHOT_TEMPLATES.map((templateOption) => (
+                        <option key={templateOption.id} value={templateOption.id}>
+                          {templateOption.label}
+                        </option>
+                      ))}
+                    </select>
                     <span className="file-name">{slot.imageName || "이미지 없음"}</span>
                     <input
                       id={`slot-file-${index}`}
@@ -518,11 +530,6 @@ export default function Page() {
       </main>
     </div>
   );
-}
-
-function nextTemplateId(currentId: TemplateId): TemplateId {
-  const index = SCREENSHOT_TEMPLATES.findIndex((template) => template.id === currentId);
-  return SCREENSHOT_TEMPLATES[(index + 1) % SCREENSHOT_TEMPLATES.length].id;
 }
 
 function handleSlotInput(
@@ -555,6 +562,59 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function buildPromptForSlot({
+  slot,
+  template,
+  platform,
+  pageNumber,
+  totalPages,
+}: {
+  slot: Slot;
+  template: ScreenshotTemplate;
+  platform: PlatformDef;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return [
+    "# StoreShot 스크린샷 문구 작성 요청",
+    "",
+    `대상 화면: ${pageNumber}/${totalPages}`,
+    `제출 플랫폼: ${platform.store} (${platform.label})`,
+    `현재 템플릿: ${template.label}`,
+    `템플릿 ID: ${template.id}`,
+    "",
+    "현재 임시 문구:",
+    `제목: ${slot.title}`,
+    `설명: ${slot.subtitle}`,
+    "",
+    "아래 템플릿 프롬프트를 기준으로 이 프로젝트에 맞는 스토어 스크린샷 문구를 작성해줘.",
+    "",
+    template.prompt,
+  ].join("\n");
+}
+
+async function copyText(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the textarea fallback below.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  return copied;
+}
+
 async function renderSlotToBlob({
   slot,
   index,
@@ -562,6 +622,7 @@ async function renderSlotToBlob({
   template,
   bgMode,
   theme,
+  exportFormat,
   jpgQuality,
 }: {
   slot: Slot;
@@ -570,6 +631,7 @@ async function renderSlotToBlob({
   template: ScreenshotTemplate;
   bgMode: BackgroundMode;
   theme: ScreenshotTheme;
+  exportFormat: ExportFormat;
   jpgQuality: number;
 }): Promise<Blob> {
   const canvas = document.createElement("canvas");
@@ -581,7 +643,7 @@ async function renderSlotToBlob({
   }
   drawBackground(ctx, canvas.width, canvas.height, theme, bgMode);
   await drawTemplate(ctx, canvas, slot, index, platform, template, theme);
-  const mime = slot.format === "jpg" ? "image/jpeg" : "image/png";
+  const mime = exportFormat === "jpg" ? "image/jpeg" : "image/png";
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -747,7 +809,7 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
 
 function phoneRect(w: number, h: number, platform: PlatformDef, heightRatio: number): Rect {
   const phoneH = h * heightRatio;
-  const phoneW = phoneH * (platform.deviceClass === "ios" ? 0.49 : 0.51);
+  const phoneW = phoneH * (platform.deviceClass === "ios" ? IPHONE_17_PRO_DEVICE.aspectRatio : 0.51);
   return {
     x: (w - phoneW) / 2,
     y: (h - phoneH) / 2,
@@ -777,7 +839,7 @@ async function drawPhone(
   ctx.fill();
   ctx.restore();
 
-  const pad = rect.width * 0.045;
+  const pad = rect.width * (platform.deviceClass === "ios" ? 0.027 : 0.04);
   const screen = {
     x: rect.x + pad,
     y: rect.y + pad,

@@ -371,8 +371,7 @@ textarea:focus-visible,
 
 .primary-action,
 .secondary-action,
-.text-action,
-.template-cycle {
+.text-action {
   min-height: 38px;
   border-radius: 8px;
   font-weight: 900;
@@ -389,8 +388,7 @@ textarea:focus-visible,
   background: var(--primary-hover);
 }
 
-.secondary-action,
-.template-cycle {
+.secondary-action {
   border: 1px solid #bfbfbf;
   background: #ffffff;
   color: #111111;
@@ -446,7 +444,26 @@ textarea:focus-visible,
 .topbar-actions {
   display: flex;
   flex: 0 0 auto;
+  align-items: center;
   gap: 10px;
+}
+
+.topbar-format {
+  display: grid;
+  gap: 4px;
+  color: #555555;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.topbar-format select {
+  min-height: 38px;
+  border: 1px solid #bfbfbf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  padding: 0 10px;
+  font-weight: 900;
 }
 
 .stage-wrap {
@@ -492,18 +509,6 @@ textarea:focus-visible,
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.format-select {
-  width: 72px;
-  min-height: 32px;
-  border: 1px solid #bcbcbc;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #111111;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 900;
 }
 
 .shot-preview {
@@ -578,15 +583,17 @@ textarea:focus-visible,
   position: absolute;
   z-index: 2;
   width: var(--device-width, 68%);
-  aspect-ratio: 9 / 19.2;
+  aspect-ratio: var(--device-ratio, 71.9 / 150);
   border-radius: 12% / 6%;
   background: linear-gradient(145deg, #737373, #151515 28%, #050505 70%, #9f9f9f);
   box-shadow: 0 8px 8px rgba(0, 0, 0, 0.28);
-  padding: 3.6%;
+  padding: 2.2%;
 }
 
 .device-frame.android {
+  aspect-ratio: 9 / 19.2;
   border-radius: 9% / 5%;
+  padding: 3.6%;
 }
 
 .device-screen {
@@ -658,7 +665,7 @@ textarea:focus-visible,
 
 .shot-footer {
   display: grid;
-  grid-template-columns: 72px 92px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   margin-top: 10px;
@@ -677,13 +684,20 @@ textarea:focus-visible,
   cursor: pointer;
 }
 
-.template-cycle {
+.template-select {
   min-height: 34px;
+  min-width: 0;
+  border: 1px solid #bfbfbf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
   padding: 0 8px;
   font-size: 12px;
+  font-weight: 900;
 }
 
 .file-name {
+  grid-column: 1 / -1;
   min-width: 0;
   overflow: hidden;
   color: #555555;
@@ -691,6 +705,11 @@ textarea:focus-visible,
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.prompt-action {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .layout-hero-center .copy-block {

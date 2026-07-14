@@ -10,7 +10,19 @@ export type TemplateFamily =
   | "corner-focus"
   | "poster-stack";
 
-export type ScreenshotTemplate = {
+export const IPHONE_17_PRO_DISPLAY = {
+  width: 1206,
+  height: 2622,
+  aspectRatio: 1206 / 2622,
+} as const;
+
+export const IPHONE_17_PRO_DEVICE = {
+  widthMm: 71.9,
+  heightMm: 150,
+  aspectRatio: 71.9 / 150,
+} as const;
+
+type ScreenshotTemplateBlueprint = {
   id: string;
   label: string;
   description: string;
@@ -18,7 +30,7 @@ export type ScreenshotTemplate = {
   badge: string;
 };
 
-export const SCREENSHOT_TEMPLATES = [
+const SCREENSHOT_TEMPLATE_BLUEPRINTS = [
   {
     id: "hero-center-01",
     label: "중앙 히어로",
@@ -229,9 +241,31 @@ export const SCREENSHOT_TEMPLATES = [
     family: "poster-stack",
     badge: "브랜드",
   },
-] as const satisfies readonly ScreenshotTemplate[];
+] as const satisfies readonly ScreenshotTemplateBlueprint[];
 
-export type TemplateId = (typeof SCREENSHOT_TEMPLATES)[number]["id"];
+const familyPromptGuidance: Record<TemplateFamily, string> = {
+  "hero-center": "가장 강한 핵심 가치 하나를 상단에서 먼저 설득한다. 제목은 짧고 기억하기 쉬운 주장형 문장으로 쓴다.",
+  "device-first": "앱 화면 자체가 먼저 보이는 구성이므로, 문구는 화면에서 사용자가 무엇을 할 수 있는지 보조적으로 설명한다.",
+  "split-right": "왼쪽 문구가 기능 설명을 담당하고 오른쪽 기기가 근거가 된다. 기능명보다 사용 결과와 효율을 먼저 말한다.",
+  "split-left": "왼쪽 기기에서 시작해 오른쪽 문구로 읽히는 흐름이다. 비교, 전환, 개선 전후 메시지에 맞춰 작성한다.",
+  diagonal: "기울어진 기기가 런칭/캠페인 느낌을 만든다. 에너지 있는 동사와 짧은 프로모션형 표현을 사용한다.",
+  "bottom-band": "상단 기기 아래에 하단 설명띠가 붙는다. 화면을 먼저 본 뒤 이해를 완성하는 요약형 문구로 작성한다.",
+  "top-band": "상단 설명띠가 먼저 읽힌다. 사용 흐름이나 안내 메시지를 차분하게 제시하고 기기가 뒤에서 증명하게 한다.",
+  "side-note": "작은 노트처럼 기능 맥락을 붙이는 구성이므로, 짧은 태그와 구체적인 사용 상황을 함께 떠올리게 작성한다.",
+  "corner-focus": "기기가 크게 잘려 보이는 임팩트 컷이다. 한 장으로 강하게 각인될 첫 화면/핵심 화면 메시지를 작성한다.",
+  "poster-stack": "문구와 기기가 포스터처럼 겹친다. 마지막 장표, 다운로드 유도, 브랜드 각인에 적합한 마감 문구로 작성한다.",
+};
+
+export type TemplateId = (typeof SCREENSHOT_TEMPLATE_BLUEPRINTS)[number]["id"];
+
+export type ScreenshotTemplate = (typeof SCREENSHOT_TEMPLATE_BLUEPRINTS)[number] & {
+  prompt: string;
+};
+
+export const SCREENSHOT_TEMPLATES = SCREENSHOT_TEMPLATE_BLUEPRINTS.map((template) => ({
+  ...template,
+  prompt: createTemplatePrompt(template),
+})) as readonly ScreenshotTemplate[];
 
 export const DEFAULT_TEMPLATE_SEQUENCE = [
   "hero-center-01",
@@ -352,4 +386,30 @@ export function getTemplateById(id: string) {
 
 export function getThemeById(id: string) {
   return SCREENSHOT_THEMES.find((theme) => theme.id === id) ?? SCREENSHOT_THEMES[0];
+}
+
+function createTemplatePrompt(template: ScreenshotTemplateBlueprint) {
+  return [
+    "너는 모바일 앱의 앱스토어/구글 플레이 미리보기 스크린샷 카피를 작성하는 AI 에이전트다.",
+    "프로젝트 폴더에서 README, 앱 설명, 주요 기능, 화면 캡처 파일명, 패키지 메타데이터를 먼저 확인한 뒤 아래 템플릿에 들어갈 문구를 작성해라.",
+    "",
+    `템플릿명: ${template.label}`,
+    `템플릿 배치: ${template.description}`,
+    `레이아웃 작성 방향: ${familyPromptGuidance[template.family]}`,
+    "",
+    "작성 규칙:",
+    "- 모든 결과는 한국어로 작성한다.",
+    "- 제목은 14~22자 안팎으로 짧고 강하게 쓴다.",
+    "- 설명은 28~48자 안팎으로, 스크린샷 안에서 줄바꿈되어도 자연스럽게 읽히게 쓴다.",
+    "- 기능 나열보다 사용자가 얻게 되는 결과, 시간 절약, 신뢰, 편의성, 제출 준비 상태를 먼저 표현한다.",
+    "- 과장 광고, 근거 없는 1위/최고/완벽 같은 표현은 피한다.",
+    "- 현재 프로젝트에서 확인한 실제 기능만 반영한다.",
+    "",
+    "출력 형식:",
+    "제목: <스크린샷 제목 1개>",
+    "설명: <보조 설명 1개>",
+    "대체안:",
+    "1. <다른 제목> / <다른 설명>",
+    "2. <다른 제목> / <다른 설명>",
+  ].join("\n");
 }
