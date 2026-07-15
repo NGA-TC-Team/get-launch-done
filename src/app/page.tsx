@@ -48,6 +48,8 @@ import {
 } from "./templates";
 import type { ScreenshotTemplate, ScreenshotTheme, TemplateFamily, TemplateId, ThemeId } from "./templates";
 import { applyLoadedImagesToSlots } from "./slot-images";
+import { getNextIssueIndex, getVisibleIssues } from "./workflow";
+import type { InspectorMode, SlotReadiness, SlotIssue } from "./workflow";
 
 const TOTAL_SLOTS = DEFAULT_COPY.length;
 const MIN_GRADIENT_STOPS = 2;
@@ -64,7 +66,6 @@ type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
 type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
 type DeviceGestureMode = "move" | "scale" | "rotate";
-type InspectorMode = "copy" | "layout" | "export" | "ai";
 
 const INSPECTOR_MODES: Array<{ id: InspectorMode; label: string; description: string }> = [
   { id: "copy", label: "카피", description: "문구" },
@@ -142,19 +143,6 @@ type PersistedDraft = {
   slots: Slot[];
 };
 
-type SlotReadiness = {
-  hasImage: boolean;
-  copyIssues: string[];
-  hiddenLayers: number;
-  isReady: boolean;
-};
-
-type SlotIssue = {
-  index: number;
-  label: string;
-  mode: InspectorMode;
-};
-
 function createGradientStops(a: string, b: string): GradientStop[] {
   return [
     { id: "stop-1", color: a, position: 0 },
@@ -199,17 +187,6 @@ function getSlotReadiness(slot: Slot): SlotReadiness {
   };
 }
 
-function getNextIssueIndex(readiness: SlotReadiness[], selected: number) {
-  for (let offset = 0; offset < readiness.length; offset += 1) {
-    const index = (selected + offset) % readiness.length;
-    if (!readiness[index].isReady) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
 function getReleaseStatusLabel(missingImageCount: number, copyIssueSlotCount: number) {
   if (!missingImageCount && !copyIssueSlotCount) {
     return "제출 준비됨";
@@ -231,24 +208,6 @@ function getSlotIssueSummary(readiness: SlotReadiness, imageName: string) {
     return `${readiness.copyIssues.join(", ")} 입력 필요`;
   }
   return imageName || "이미지 입력됨";
-}
-
-function createSlotIssue(index: number, readiness: SlotReadiness): SlotIssue | null {
-  if (!readiness.hasImage) {
-    return {
-      index,
-      label: "이미지",
-      mode: "export",
-    };
-  }
-  if (readiness.copyIssues.length) {
-    return {
-      index,
-      label: readiness.copyIssues.join(", "),
-      mode: "copy",
-    };
-  }
-  return null;
 }
 
 function formatPageRange(startIndex: number, count: number) {
@@ -308,10 +267,17 @@ export default function Page() {
   const exportFileCount = platformKey === "ios" ? TOTAL_SLOTS * 2 : TOTAL_SLOTS;
   const releaseReady = slotReadiness.every((item) => item.isReady);
   const releaseStatusLabel = getReleaseStatusLabel(missingImageCount, copyIssueSlotCount);
-  const visibleIssues = slotReadiness
-    .map((readiness, index) => createSlotIssue(index, readiness))
-    .filter((issue): issue is SlotIssue => Boolean(issue))
-    .slice(0, 4);
+  const orderedIssues = getVisibleIssues(slotReadiness, selected, TOTAL_SLOTS);
+  const visibleIssues = orderedIssues.slice(0, 4);
+  const firstBlockingIssue = orderedIssues[0] ?? null;
+  const firstMissingImageIssue = orderedIssues.find((issue) => issue.mode === "export") ?? null;
+  const firstCopyIssue = orderedIssues.find((issue) => issue.mode === "copy") ?? null;
+  const firstHiddenLayerIndex = slots.findIndex((slot) => !slot.showBadge || !slot.showTitle || !slot.showSubtitle);
+  const selectedBoardState = selectedReadiness.isReady ? "is-ready" : selectedReadiness.hasImage ? "needs-review" : "is-empty";
+  const selectedStateLabel = selectedReadiness.isReady ? "준비" : selectedReadiness.hasImage ? "점검" : "대기";
+  const selectedIssueText = getSlotIssueSummary(selectedReadiness, selectedSlot.imageName);
+  const selectedIssue = visibleIssues.find((issue) => issue.index === selected) ?? null;
+  const boardIssueTarget = selectedIssue ?? firstBlockingIssue;
   const gradientConfig = useMemo<GradientConfig>(
     () => ({
       type: gradientType,
@@ -557,11 +523,13 @@ export default function Page() {
 
   async function exportZip() {
     if (!releaseReady) {
-      const issueIndex = nextIssueIndex >= 0 ? nextIssueIndex : selected;
-      const issue = slotReadiness[issueIndex];
-      selectSlot(issueIndex);
-      setInspectorMode(issue.copyIssues.length ? "copy" : "export");
-      notify(`${String(issueIndex + 1).padStart(2, "0")}번 화면을 먼저 점검하세요. ${releaseStatusLabel}`);
+      if (firstBlockingIssue) {
+        jumpToIssue(firstBlockingIssue);
+        notify(`${String(firstBlockingIssue.index + 1).padStart(2, "0")}번 화면을 먼저 점검하세요. ${releaseStatusLabel}`);
+      } else {
+        setInspectorMode("export");
+        notify(releaseStatusLabel);
+      }
       return;
     }
 
@@ -1238,6 +1206,60 @@ export default function Page() {
           onDragLeave={handleStageDragLeave}
           onDrop={handleStageDrop}
         >
+          <div className="stage-workbar" aria-label="릴리즈 보드 상태">
+            <div className="stage-workbar-title">
+              <span>릴리즈 보드</span>
+              <strong>
+                {String(selected + 1).padStart(2, "0")}번 · {selectedTemplate.label}
+              </strong>
+            </div>
+            <div className="stage-workbar-status">
+              <span className={`shot-state ${selectedBoardState}`}>{selectedStateLabel}</span>
+              <strong>{selectedIssueText}</strong>
+            </div>
+            <div className="stage-workbar-actions" aria-label="보드 이동">
+              <button type="button" onClick={() => moveSelectedSlot(-1)}>
+                이전
+              </button>
+              <button
+                type="button"
+                disabled={!boardIssueTarget}
+                onClick={() => {
+                  if (boardIssueTarget) {
+                    jumpToIssue(boardIssueTarget);
+                  }
+                }}
+              >
+                {selectedIssue ? "현재 점검" : "다음 점검"}
+              </button>
+              <button type="button" onClick={() => moveSelectedSlot(1)}>
+                다음
+              </button>
+            </div>
+            <div className="stage-screen-map" aria-label="전체 화면 준비 상태">
+              <span>화면 상태</span>
+              <div>
+                {slotReadiness.map((readiness, index) => {
+                  const pageState = readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기";
+                  const pageStateClass = readiness.isReady ? "is-ready" : readiness.hasImage ? "needs-review" : "is-empty";
+
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      className={`${pageStateClass} ${index === selected ? "is-current" : ""}`}
+                      aria-current={index === selected ? "page" : undefined}
+                      aria-label={`${String(index + 1).padStart(2, "0")}번 ${pageState}`}
+                      onClick={() => selectSlot(index)}
+                    >
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <small>{pageState}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
           {!uploadedCount ? (
             <div className="stage-intake" aria-label="시작 안내">
               <strong>이미지 10장을 보드에 드롭하세요</strong>
@@ -1292,8 +1314,8 @@ export default function Page() {
                       setDraggingSlot(null);
                       setIsStageDragging(false);
                       void assignFiles(index, Array.from(event.dataTransfer.files));
-	                    }}
-	                  >
+                    }}
+                  >
                     <div
                       className="preview-visibility-toggles"
                       aria-label={`${index + 1}번 텍스트 표시`}
@@ -1465,10 +1487,16 @@ export default function Page() {
           </div>
           {visibleIssues.length ? (
             <div className="issue-queue" aria-label="다음 점검 화면">
-              <span>다음 점검</span>
+              <span>선택 기준 다음 점검</span>
               <div>
                 {visibleIssues.map((issue) => (
-                  <button key={issue.index} type="button" onClick={() => jumpToIssue(issue)}>
+                  <button
+                    key={issue.index}
+                    type="button"
+                    className={issue.index === selected ? "is-current" : ""}
+                    aria-current={issue.index === selected ? "true" : undefined}
+                    onClick={() => jumpToIssue(issue)}
+                  >
                     {String(issue.index + 1).padStart(2, "0")} · {issue.label}
                   </button>
                 ))}
@@ -1633,21 +1661,75 @@ export default function Page() {
               <p className="hint">ZIP 생성 전에 누락된 화면과 산출물 구성을 확인합니다.</p>
             </div>
           </div>
-          <div className="readiness-panel" aria-label="내보내기 준비 상태">
-            <div className={releaseReady ? "readiness-row is-ok" : "readiness-row needs-work"}>
-              <span>이미지</span>
-              <strong>{missingImageCount ? `${missingImageCount}개 누락` : "10개 모두 입력"}</strong>
+          <div className="quality-gate" aria-label="출시 게이트">
+            <div className={`quality-gate-card ${missingImageCount ? "is-blocked" : "is-ok"}`}>
+              <div>
+                <span>이미지</span>
+                <strong>{missingImageCount ? `${missingImageCount}개 화면 필요` : "10개 모두 입력"}</strong>
+              </div>
+              {firstMissingImageIssue ? (
+                <button type="button" onClick={() => jumpToIssue(firstMissingImageIssue)}>
+                  {String(firstMissingImageIssue.index + 1).padStart(2, "0")}번으로 이동
+                </button>
+              ) : (
+                <small>정상</small>
+              )}
             </div>
-            <div className={copyIssueCount ? "readiness-row needs-work" : "readiness-row is-ok"}>
-              <span>카피</span>
-              <strong>{copyIssueCount ? `${copyIssueSlotCount}개 화면 점검` : "보이는 문구 정상"}</strong>
+            <div className={`quality-gate-card ${copyIssueCount ? "is-blocked" : "is-ok"}`}>
+              <div>
+                <span>카피</span>
+                <strong>{copyIssueCount ? `${copyIssueSlotCount}개 화면 · ${copyIssueCount}개 항목` : "보이는 문구 정상"}</strong>
+              </div>
+              {firstCopyIssue ? (
+                <button type="button" onClick={() => jumpToIssue(firstCopyIssue)}>
+                  {String(firstCopyIssue.index + 1).padStart(2, "0")}번 카피
+                </button>
+              ) : (
+                <small>정상</small>
+              )}
+            </div>
+            <div className={`quality-gate-card ${hiddenCopyCount ? "is-warning" : "is-ok"}`}>
+              <div>
+                <span>텍스트 숨김</span>
+                <strong>{hiddenCopyCount ? `${hiddenCopyCount}개 화면 숨김` : "숨김 없음"}</strong>
+              </div>
+              {firstHiddenLayerIndex >= 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectSlot(firstHiddenLayerIndex);
+                    setInspectorMode("copy");
+                  }}
+                >
+                  표시 설정
+                </button>
+              ) : (
+                <small>정상</small>
+              )}
+            </div>
+            <div className="quality-gate-card is-ok">
+              <div>
+                <span>ZIP 산출물</span>
+                <strong>
+                  {exportFileCount}개 {exportFormat.toUpperCase()}
+                </strong>
+              </div>
+              <small>{platformKey === "ios" ? "iPad 포함" : "단일 폴더"}</small>
+            </div>
+          </div>
+          <div className="readiness-panel" aria-label="내보내기 파일 구성">
+            <div className="readiness-row">
+              <span>대상 스토어</span>
+              <strong>{platform.store}</strong>
             </div>
             <div className="readiness-row">
-              <span>텍스트 숨김</span>
-              <strong>{hiddenCopyCount ? `${hiddenCopyCount}개 화면` : "없음"}</strong>
+              <span>기본 해상도</span>
+              <strong>
+                {platform.width} x {platform.height}
+              </strong>
             </div>
             <div className="readiness-row">
-              <span>ZIP 산출물</span>
+              <span>파일 구성</span>
               <strong>
                 {exportFileCount}개 {exportFormat.toUpperCase()}
                 {exportFormat === "jpg" ? ` · ${Math.round(jpgQuality * 100)}%` : ""}

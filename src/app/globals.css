@@ -806,10 +806,17 @@ textarea:focus-visible,
 
 .stage-wrap {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow: hidden;
   padding: 22px 24px;
+}
+
+.stage-wrap.has-intake {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .stage-wrap.is-stage-dragging::after {
@@ -828,18 +835,158 @@ textarea:focus-visible,
   pointer-events: none;
 }
 
-.stage-wrap.has-intake .stage {
-  height: calc(100% - 58px);
-  margin-top: 58px;
+.stage-workbar {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(160px, auto) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d2d5d9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  padding: 10px 12px;
+}
+
+.stage-workbar-title,
+.stage-workbar-status {
+  min-width: 0;
+}
+
+.stage-workbar-title {
+  display: grid;
+  gap: 2px;
+}
+
+.stage-workbar-title span,
+.stage-workbar-status {
+  color: #62666c;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.stage-workbar-title strong {
+  overflow: hidden;
+  color: #111111;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-workbar-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.stage-workbar-status strong {
+  overflow: hidden;
+  color: #25282c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-workbar-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.stage-workbar-actions button {
+  min-height: 30px;
+  border: 1px solid #cfd2d6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.stage-workbar-actions button:hover {
+  border-color: #111111;
+}
+
+.stage-workbar-actions button:disabled {
+  border-color: #e1e3e6;
+  color: #9da2a9;
+  cursor: not-allowed;
+}
+
+.stage-screen-map {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #eceef0;
+  padding-top: 9px;
+}
+
+.stage-screen-map > span {
+  color: #62666c;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.stage-screen-map > div {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.stage-screen-map button {
+  display: grid;
+  min-width: 0;
+  min-height: 30px;
+  align-content: center;
+  gap: 1px;
+  border: 1px solid #d4d7db;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #2c3035;
+  padding: 3px 2px;
+}
+
+.stage-screen-map button.needs-review {
+  border-color: #9ca1a8;
+  background: #f5f6f7;
+}
+
+.stage-screen-map button.is-ready {
+  border-color: #1f2328;
+}
+
+.stage-screen-map button.is-current {
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
+}
+
+.stage-screen-map button span,
+.stage-screen-map button small {
+  overflow: hidden;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-screen-map button span {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.stage-screen-map button small {
+  color: inherit;
+  font-size: 9px;
+  font-weight: 900;
+  opacity: 0.72;
 }
 
 .stage-intake {
-  position: absolute;
-  z-index: 6;
-  top: 20px;
-  left: 24px;
   display: flex;
-  max-width: min(560px, calc(100% - 48px));
   align-items: center;
   gap: 12px;
   border: 1px solid #cfd2d6;
@@ -847,7 +994,6 @@ textarea:focus-visible,
   background: rgba(255, 255, 255, 0.96);
   color: #111111;
   padding: 10px 12px;
-  box-shadow: 0 4px 8px rgba(15, 15, 15, 0.12);
   pointer-events: none;
 }
 
@@ -1675,6 +1821,12 @@ textarea:focus-visible,
   border-color: #111111;
 }
 
+.issue-queue button.is-current {
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
+}
+
 .workflow-actions {
   display: grid;
 }
@@ -1742,6 +1894,80 @@ label.workflow-next {
 
 .inspector .secondary-action {
   width: 100%;
+}
+
+.quality-gate {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quality-gate-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d1d3d6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  padding: 10px;
+}
+
+.quality-gate-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.quality-gate-card span {
+  color: #62666c;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.quality-gate-card strong {
+  overflow: hidden;
+  color: #111111;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-gate-card small {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  border: 1px solid #d5d8dc;
+  border-radius: 999px;
+  color: #34383d;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.quality-gate-card button {
+  min-height: 30px;
+  border: 1px solid #111111;
+  border-radius: 8px;
+  background: #111111;
+  color: #ffffff;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.quality-gate-card.is-blocked {
+  border-color: #111111;
+  background: #f2f3f4;
+}
+
+.quality-gate-card.is-warning {
+  border-color: #9da2a9;
+  background: #fbfbfc;
 }
 
 .readiness-panel {
@@ -2102,10 +2328,39 @@ label.workflow-next {
     padding: 16px;
   }
 
+  .stage-workbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .stage-workbar-status {
+    justify-content: flex-start;
+  }
+
+  .stage-workbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .stage-screen-map {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .stage-screen-map > div {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .quality-gate-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .quality-gate-card button,
+  .quality-gate-card small {
+    justify-content: center;
+  }
+
   .stage-intake {
-    top: 14px;
-    left: 16px;
-    max-width: calc(100% - 32px);
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;

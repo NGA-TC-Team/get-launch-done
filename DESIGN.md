@@ -10,12 +10,13 @@ The editor uses a three-pane workspace:
 
 - Left pane: global setup for platform, device chrome, templates, and screenshot background.
 - Center pane: the release board with the 10 screenshot pages, upload/drop targets, page status, and visual review.
+- The release board keeps a compact status bar above the screenshots with the selected page, current issue summary, previous/next navigation, selected-page issue jump, and a 10-screen state map.
 - Right pane: selected-page inspector with a 10-page navigator, copy, visibility, template, mockup transform, and prompt JSON operations.
 - The inspector starts with a work queue that shows total completion, current-page image/copy readiness, hidden layer count, and the next page requiring review.
 - Work queue actions resolve the current selected-page issue first: image gaps open a selected-page upload action, copy gaps move to copy mode, and ready pages advance to the next issue.
-- The work queue exposes a compact next-issues list so launch teams can jump between blocked pages without rescanning the horizontal board.
+- The work queue exposes a compact next-issues list, ordered from the selected page and wrapping back to 01, so launch teams can jump between blocked pages without rescanning the horizontal board.
 - The inspector uses task modes for copy, layout, export review, and AI JSON so users see only the controls needed for the current editing task.
-- The inspector includes an export readiness panel so users can see missing images, hidden text layers, generated file count, and iPad folder inclusion before exporting.
+- The inspector includes an export quality gate so users can see blocking issues, warning-level hidden text layers, generated file count, and iPad folder inclusion before exporting.
 
 The top bar is reserved for project-level state and final actions: release progress, undo/redo, upload, reset, format, ZIP export, and a compact guidance line for next steps, upload, JSON, undo, and export feedback. Per-page editing should happen in the right inspector, not repeated under every page card.
 
@@ -46,7 +47,7 @@ The top bar is reserved for project-level state and final actions: release progr
 - Keyboard navigation supports repeated review: left/right arrows move between pages, while Home/End jump to the first or last page without interfering with text inputs.
 - Prompt and JSON operations are shown as a compact three-step rail: copy prompt, generate copy externally, paste/apply JSON.
 - JSON schema examples live in a collapsible note so AI-assisted copywriting remains discoverable without crowding the inspector.
-- Export readiness is shown as operational status, not as a decorative metric block.
+- Export readiness is shown as an actionable quality gate, not as a decorative metric block. Blocking rows must offer a direct jump to the relevant screen.
 - ZIP export is gated by readiness. If any page is missing an image or visible copy, the export action acts as a guide to the first issue instead of becoming an inert disabled control.
 - Empty states should teach the first action inline: dropping multiple PNG/JPG images fills pages in order, while card-level drops continue from that page.
 - Upload and JSON feedback should name the affected page range or screen count so repeated release work does not require users to infer what changed.
