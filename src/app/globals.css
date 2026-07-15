@@ -22,9 +22,15 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 1120px;
+  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font-family:
@@ -55,10 +61,12 @@ textarea:focus-visible,
 .app-shell {
   display: grid;
   grid-template-columns: 356px 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
+  max-height: 100vh;
   overflow-y: auto;
   border-right: 1px solid var(--sidebar-line);
   background: var(--sidebar);
@@ -431,12 +439,6 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-.export-panel .primary-action,
-.export-panel .secondary-action {
-  width: 100%;
-  margin-top: 10px;
-}
-
 .bulk-upload-button {
   display: grid;
   place-items: center;
@@ -446,7 +448,9 @@ textarea:focus-visible,
 .workspace {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -485,7 +489,7 @@ textarea:focus-visible,
 
 .global-hide-controls {
   display: grid;
-  grid-template-columns: repeat(3, max-content);
+  grid-template-columns: minmax(150px, max-content);
   align-items: center;
   gap: 6px;
 }
@@ -669,12 +673,19 @@ textarea:focus-visible,
 .device-frame {
   position: absolute;
   z-index: 2;
+  --device-base-rotate: 0deg;
+  --device-shift-x: 0%;
+  --device-shift-y: 0%;
+  --device-scale: 1;
+  --device-rotate: 0deg;
   width: var(--device-width, 68%);
   aspect-ratio: var(--device-ratio, 71.9 / 150);
   border-radius: 12% / 6%;
   background: linear-gradient(145deg, #737373, #151515 28%, #050505 70%, #9f9f9f);
   box-shadow: 0 8px 8px rgba(0, 0, 0, 0.28);
   padding: 2.2%;
+  transform: translate(var(--device-shift-x), var(--device-shift-y)) scale(var(--device-scale))
+    rotate(calc(var(--device-base-rotate) + var(--device-rotate)));
 }
 
 .device-frame.android {
@@ -979,7 +990,7 @@ textarea:focus-visible,
   right: 14%;
   bottom: 8%;
   width: 66%;
-  transform: rotate(-7deg);
+  --device-base-rotate: -7deg;
 }
 
 .layout-bottom-band .copy-block,
@@ -1057,13 +1068,44 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  max-width: min(360px, calc(100vw - 48px));
+  border: 1px solid #303030;
+  border-radius: 8px;
+  background: #111111;
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  font-size: 13px;
+  font-weight: 900;
+  opacity: 0;
+  padding: 13px 15px;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 @media (max-width: 900px) {
   body {
     min-width: 0;
+    overflow: auto;
   }
 
   .app-shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .sidebar {

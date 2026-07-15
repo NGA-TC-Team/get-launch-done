@@ -1,8 +1,14 @@
 "use client";
 
-import type { CSSProperties, ChangeEvent, ClipboardEvent, DragEvent } from "react";
-import { useMemo, useState } from "react";
+import type { CSSProperties, ChangeEvent, ClipboardEvent, DragEvent, MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { shouldRenderDeviceCutout } from "./device-mockup";
+import {
+  DEFAULT_DEVICE_TRANSFORM,
+  createDeviceTransformStyle,
+  normalizeDeviceTransform,
+} from "./device-transform";
+import type { DeviceTransform } from "./device-transform";
 import {
   createCssGradient,
   getSolidGradientColor,
@@ -28,11 +34,13 @@ import { applyLoadedImagesToSlots } from "./slot-images";
 const TOTAL_SLOTS = DEFAULT_COPY.length;
 const MIN_GRADIENT_STOPS = 2;
 const MAX_GRADIENT_STOPS = 5;
+const STORAGE_KEY = "storeshot-draft-v2";
 
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
 type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
+type SidebarMode = "main" | "content";
 
 type Slot = {
   badge: string;
@@ -44,6 +52,7 @@ type Slot = {
   showBadge: boolean;
   showTitle: boolean;
   showSubtitle: boolean;
+  deviceTransform: DeviceTransform;
 };
 
 type Rect = {
@@ -74,6 +83,22 @@ type ZipFile = {
 
 type CSSVars = CSSProperties & Record<`--${string}`, string | number>;
 
+type PersistedDraft = {
+  version: 2;
+  platformKey: PlatformKey;
+  bgMode: BackgroundMode;
+  themeId: ThemeId;
+  gradientType: GradientType;
+  gradientAngle: number;
+  gradientStops: GradientStop[];
+  gradientHexDrafts: Record<string, string>;
+  hideDeviceCutout: boolean;
+  exportFormat: ExportFormat;
+  jpgQuality: number;
+  selected: number;
+  slots: Slot[];
+};
+
 function createGradientStops(a: string, b: string): GradientStop[] {
   return [
     { id: "stop-1", color: a, position: 0 },
@@ -96,11 +121,14 @@ function createInitialSlots(): Slot[] {
       showBadge: true,
       showTitle: true,
       showSubtitle: true,
+      deviceTransform: DEFAULT_DEVICE_TRANSFORM,
     };
   });
 }
 
 export default function Page() {
+  const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("main");
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
@@ -114,7 +142,8 @@ export default function Page() {
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
   const [promptJsonInput, setPromptJsonInput] = useState("");
-  const [status, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
+  const [, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
+  const [toast, setToast] = useState("");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
 
@@ -131,6 +160,75 @@ export default function Page() {
     [gradientAngle, gradientStops, gradientType],
   );
   const previewBackground = bgMode === "solid" ? getSolidGradientColor(gradientConfig) : createCssGradient(gradientConfig);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const draft = readStoredDraft();
+      if (draft) {
+        setPlatformKey(draft.platformKey);
+        setBgMode(draft.bgMode);
+        setThemeId(draft.themeId);
+        setGradientType(draft.gradientType);
+        setGradientAngle(draft.gradientAngle);
+        setGradientStops(draft.gradientStops);
+        setGradientHexDrafts(draft.gradientHexDrafts);
+        setHideDeviceCutout(draft.hideDeviceCutout);
+        setExportFormat(draft.exportFormat);
+        setJpgQuality(draft.jpgQuality);
+        setSlots(draft.slots);
+        setSelected(draft.selected);
+        setStatus("브라우저에 저장된 작업을 불러왔습니다.");
+      }
+      setHasHydratedDraft(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedDraft) {
+      return;
+    }
+
+    writeStoredDraft({
+      version: 2,
+      platformKey,
+      bgMode,
+      themeId,
+      gradientType,
+      gradientAngle,
+      gradientStops,
+      gradientHexDrafts,
+      hideDeviceCutout,
+      exportFormat,
+      jpgQuality,
+      selected,
+      slots,
+    });
+  }, [
+    bgMode,
+    exportFormat,
+    gradientAngle,
+    gradientHexDrafts,
+    gradientStops,
+    gradientType,
+    hasHydratedDraft,
+    hideDeviceCutout,
+    jpgQuality,
+    platformKey,
+    selected,
+    slots,
+    themeId,
+  ]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setToast(""), 2400);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   const stageStyle = useMemo<CSSVars>(
     () => ({
@@ -167,6 +265,11 @@ export default function Page() {
     setStatus(`${loaded.length}개의 이미지를 추가했습니다.`);
   }
 
+  function notify(message: string) {
+    setStatus(message);
+    setToast(message);
+  }
+
   function updateSlot(index: number, update: Partial<Slot>) {
     setSlots((current) =>
       current.map((slot, slotIndex) => (slotIndex === index ? { ...slot, ...update } : slot)),
@@ -175,6 +278,11 @@ export default function Page() {
 
   function updateSelectedSlot(update: Partial<Slot>) {
     updateSlot(selected, update);
+  }
+
+  function selectSlot(index: number) {
+    setSelected(index);
+    setSidebarMode("content");
   }
 
   function updateSlotTemplate(index: number, templateId: TemplateId) {
@@ -195,6 +303,20 @@ export default function Page() {
 
   function isEveryTextHidden(key: TextVisibilityKey) {
     return slots.every((slot) => !slot[key]);
+  }
+
+  function resetSelectedDeviceTransform() {
+    updateSelectedSlot({ deviceTransform: DEFAULT_DEVICE_TRANSFORM });
+    notify("선택한 화면의 목업 위치를 초기화했습니다.");
+  }
+
+  function updateSelectedDeviceTransform(update: Partial<DeviceTransform>) {
+    updateSelectedSlot({
+      deviceTransform: normalizeDeviceTransform({
+        ...selectedSlot.deviceTransform,
+        ...update,
+      }),
+    });
   }
 
   function applyScreenshotTheme(nextThemeId: ThemeId) {
@@ -266,9 +388,10 @@ export default function Page() {
         showBadge: true,
         showTitle: true,
         showSubtitle: true,
+        deviceTransform: DEFAULT_DEVICE_TRANSFORM,
       })),
     );
-    setStatus("기본 한글 문구와 템플릿 배치를 다시 적용했습니다.");
+    notify("기본 한글 문구와 템플릿 배치를 다시 적용했습니다.");
   }
 
   async function exportZip() {
@@ -365,7 +488,7 @@ export default function Page() {
       totalPages: TOTAL_SLOTS,
     });
     const copied = await copyText(prompt);
-    setStatus(copied ? "선택한 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
+    notify(copied ? "선택한 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
   }
 
   async function copyAllPrompts() {
@@ -375,7 +498,7 @@ export default function Page() {
       platform,
     });
     const copied = await copyText(prompt);
-    setStatus(copied ? "01~10 전체 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
+    notify(copied ? "01~10 전체 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
   }
 
   function applyPromptJsonText(text: string) {
@@ -383,13 +506,13 @@ export default function Page() {
     const result = parsePromptJson(text, TOTAL_SLOTS);
 
     if (!result.ok) {
-      setStatus(`JSON 적용 실패: ${result.error}`);
+      notify(`JSON 적용 실패: ${result.error}`);
       return;
     }
 
     if (result.type === "single") {
       updateSelectedSlot(createPromptTextUpdate(result));
-      setStatus("붙여넣은 JSON을 선택한 화면에 적용했습니다.");
+      notify("붙여넣은 JSON을 선택한 화면에 적용했습니다.");
       return;
     }
 
@@ -401,7 +524,7 @@ export default function Page() {
       }),
     );
     setSelected(result.screens[0].page - 1);
-    setStatus(`${result.screens.length}개 화면에 프롬프트 JSON을 적용했습니다.`);
+    notify(`${result.screens.length}개 화면에 프롬프트 JSON을 적용했습니다.`);
   }
 
   function handlePromptJsonPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -412,6 +535,19 @@ export default function Page() {
 
     event.preventDefault();
     applyPromptJsonText(text);
+  }
+
+  function handleWorkspaceMouseDown(event: MouseEvent<HTMLElement>) {
+    if (sidebarMode !== "content") {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Element && target.closest(".shot-card")) {
+      return;
+    }
+
+    setSidebarMode("main");
   }
 
   return (
@@ -425,326 +561,350 @@ export default function Page() {
           </div>
         </div>
 
-        <section className="panel-section">
-          <div className="section-label">제출 플랫폼</div>
-          <div className="segmented" role="group" aria-label="제출 플랫폼">
-            {(["ios", "android"] as PlatformKey[]).map((key) => (
-              <button
-                key={key}
-                className={`segment ${platformKey === key ? "is-active" : ""}`}
-                type="button"
-                onClick={() => setPlatformKey(key)}
-              >
-                {platformDefs[key].label}
-              </button>
-            ))}
-          </div>
-          <p className="hint">{platform.sizeLabel}</p>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-label">목업 표시</div>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={hideDeviceCutout}
-              onChange={(event) => setHideDeviceCutout(event.target.checked)}
-            />
-            <span>카메라/아일랜드 숨김</span>
-          </label>
-          <p className="hint">iOS는 다이내믹 아일랜드, Android는 중앙 카메라를 숨깁니다.</p>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-row">
-            <div>
-              <div className="section-label">템플릿</div>
-              <p className="hint">선택한 화면에 적용됩니다.</p>
-            </div>
-            <button className="text-action" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
-              전체 적용
-            </button>
-          </div>
-          <div className="template-list" aria-label="스크린샷 템플릿">
-            {SCREENSHOT_TEMPLATES.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className={`template-option ${template.id === selectedSlot.templateId ? "is-active" : ""}`}
-                onClick={() => updateSelectedSlot({ templateId: template.id })}
-              >
-                <span className={`template-mini mini-${template.family}`} aria-hidden="true">
-                  <span />
-                  <i />
-                </span>
-                <span>
-                  <strong>{template.label}</strong>
-                  <span>{template.description}</span>
-                </span>
-                <em>{template.badge}</em>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-label">스크린샷 배경</div>
-          <div className="segmented" role="group" aria-label="스크린샷 배경 방식">
-            {(["tonal", "solid"] as BackgroundMode[]).map((mode) => (
-              <button
-                key={mode}
-                className={`segment ${bgMode === mode ? "is-active" : ""}`}
-                type="button"
-                onClick={() => setBgMode(mode)}
-              >
-                {mode === "tonal" ? "톤 분할" : "단색"}
-              </button>
-            ))}
-          </div>
-          <div className="swatches" aria-label="스크린샷 컬러 테마">
-            {SCREENSHOT_THEMES.map((screenshotTheme) => (
-              <button
-                key={screenshotTheme.id}
-                type="button"
-                className={`swatch ${screenshotTheme.id === themeId ? "is-active" : ""}`}
-                style={{ "--a": screenshotTheme.a, "--b": screenshotTheme.b } as CSSVars}
-                title={screenshotTheme.label}
-                aria-label={screenshotTheme.label}
-                onClick={() => applyScreenshotTheme(screenshotTheme.id)}
-              />
-            ))}
-          </div>
-          {bgMode === "tonal" ? (
-            <div className="gradient-editor">
+        {sidebarMode === "content" ? (
+          <>
+            <section className="panel-section">
+              <div className="section-label">{String(selected + 1).padStart(2, "0")}번 화면 콘텐츠</div>
               <label className="field">
-                <span>그라데이션 종류</span>
-                <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
-                  <option value="linear">선형</option>
-                  <option value="radial">방사형</option>
+                <span>템플릿</span>
+                <select
+                  value={selectedSlot.templateId}
+                  onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+                >
+                  {SCREENSHOT_TEMPLATES.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
+                    </option>
+                  ))}
                 </select>
               </label>
-              {gradientType === "linear" ? (
-                <label className="field">
-                  <span>각도</span>
+              <label className="field">
+                <span>뱃지</span>
+                <input
+                  maxLength={18}
+                  value={selectedSlot.badge}
+                  onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>제목</span>
+                <textarea
+                  rows={3}
+                  maxLength={64}
+                  value={selectedSlot.title}
+                  onChange={(event) => updateSelectedSlot({ title: event.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>설명</span>
+                <textarea
+                  rows={2}
+                  maxLength={72}
+                  value={selectedSlot.subtitle}
+                  onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
+                />
+              </label>
+              <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
+                <label className="toggle-row compact">
                   <input
-                    type="range"
-                    min={0}
-                    max={359}
-                    value={gradientAngle}
-                    onChange={(event) => setGradientAngle(Number(event.target.value))}
+                    type="checkbox"
+                    checked={selectedSlot.showBadge}
+                    onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
                   />
+                  <span>뱃지 표시</span>
                 </label>
-              ) : null}
-              <div className="gradient-heading">
-                <span>컬러 스탑</span>
-                <button
-                  className="text-action"
-                  type="button"
-                  onClick={addGradientStop}
-                  disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
-                >
-                  스탑 추가
+                <label className="toggle-row compact">
+                  <input
+                    type="checkbox"
+                    checked={selectedSlot.showTitle}
+                    onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
+                  />
+                  <span>제목 표시</span>
+                </label>
+                <label className="toggle-row compact">
+                  <input
+                    type="checkbox"
+                    checked={selectedSlot.showSubtitle}
+                    onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
+                  />
+                  <span>설명 표시</span>
+                </label>
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <div className="section-row">
+                <div>
+                  <div className="section-label">목업 조정</div>
+                  <p className="hint">선택한 화면의 iOS/Android 목업 위치, 회전, 크기를 조정합니다.</p>
+                </div>
+                <button className="text-action" type="button" onClick={resetSelectedDeviceTransform}>
+                  초기화
                 </button>
               </div>
-              <div className="gradient-stop-list">
-                {normalizeGradientStops(gradientStops).map((stop) => (
-                  <div className="gradient-stop-row" key={stop.id}>
-                    <input
-                      aria-label={`${stop.position}% 컬러`}
-                      type="color"
-                      value={stop.color}
-                      onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
-                    />
-                    <input
-                      aria-label={`${stop.color} 위치`}
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={stop.position}
-                      onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
-                    />
-                    <input
-                      aria-label={`${stop.color} 위치 값`}
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={stop.position}
-                      onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
-                    />
-                    <input
-                      className="hex-input"
-                      aria-label={`${stop.color} HEX 값`}
-                      spellCheck={false}
-                      value={gradientHexDrafts[stop.id] ?? stop.color}
-                      onBlur={() => commitGradientStopHex(stop)}
-                      onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
-                    />
-                    <button
-                      className="text-action stop-remove"
-                      type="button"
-                      onClick={() => removeGradientStop(stop.id)}
-                      disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
-                    >
-                      삭제
-                    </button>
-                  </div>
+              <label className="field">
+                <span>가로 위치 {selectedSlot.deviceTransform.x}%</span>
+                <input
+                  type="range"
+                  min={-50}
+                  max={50}
+                  value={selectedSlot.deviceTransform.x}
+                  onChange={(event) => updateSelectedDeviceTransform({ x: Number(event.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>세로 위치 {selectedSlot.deviceTransform.y}%</span>
+                <input
+                  type="range"
+                  min={-50}
+                  max={50}
+                  value={selectedSlot.deviceTransform.y}
+                  onChange={(event) => updateSelectedDeviceTransform({ y: Number(event.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>스케일 {selectedSlot.deviceTransform.scale.toFixed(2)}x</span>
+                <input
+                  type="range"
+                  min={0.55}
+                  max={1.6}
+                  step={0.01}
+                  value={selectedSlot.deviceTransform.scale}
+                  onChange={(event) => updateSelectedDeviceTransform({ scale: Number(event.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>회전 {selectedSlot.deviceTransform.rotate}도</span>
+                <input
+                  type="range"
+                  min={-45}
+                  max={45}
+                  value={selectedSlot.deviceTransform.rotate}
+                  onChange={(event) => updateSelectedDeviceTransform({ rotate: Number(event.target.value) })}
+                />
+              </label>
+            </section>
+
+            <section className="panel-section">
+              <div className="section-label">프롬프트</div>
+              <div className="prompt-actions">
+                <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
+                  선택 화면 프롬프트 복사
+                </button>
+                <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
+                  01~10 전체 프롬프트 복사
+                </button>
+              </div>
+              <label className="field">
+                <span>프롬프트 결과 JSON</span>
+                <textarea
+                  className="json-paste-area"
+                  rows={5}
+                  spellCheck={false}
+                  value={promptJsonInput}
+                  placeholder='{"title":"제목","subtitle":"설명"}'
+                  onPaste={handlePromptJsonPaste}
+                  onChange={(event) => setPromptJsonInput(event.target.value)}
+                />
+              </label>
+              <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
+                JSON 적용
+              </button>
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="panel-section">
+              <div className="section-label">제출 플랫폼</div>
+              <div className="segmented" role="group" aria-label="제출 플랫폼">
+                {(["ios", "android"] as PlatformKey[]).map((key) => (
+                  <button
+                    key={key}
+                    className={`segment ${platformKey === key ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() => setPlatformKey(key)}
+                  >
+                    {platformDefs[key].label}
+                  </button>
                 ))}
               </div>
-            </div>
-          ) : (
-            <label className="field color-field">
-              <span>단색 컬러</span>
-              <input
-                type="color"
-                value={getSolidGradientColor(gradientConfig)}
-                onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
-              />
-              <input
-                className="hex-input"
-                aria-label="단색 HEX 값"
-                spellCheck={false}
-                value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
-                onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
-                onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
-              />
-            </label>
-          )}
-          <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
-        </section>
+              <p className="hint">{platform.sizeLabel}</p>
+            </section>
 
-        <section className="panel-section">
-          <div className="section-label">선택한 화면</div>
-          <label className="field">
-            <span>템플릿</span>
-            <select
-              value={selectedSlot.templateId}
-              onChange={(event) => updateSelectedSlot({ templateId: event.target.value as TemplateId })}
-            >
-              {SCREENSHOT_TEMPLATES.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>뱃지</span>
-            <input
-              maxLength={18}
-              value={selectedSlot.badge}
-              onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
-            />
-          </label>
-          <label className="field">
-            <span>제목</span>
-            <textarea
-              rows={3}
-              maxLength={64}
-              value={selectedSlot.title}
-              onChange={(event) => updateSelectedSlot({ title: event.target.value })}
-            />
-          </label>
-          <label className="field">
-            <span>설명</span>
-            <textarea
-              rows={2}
-              maxLength={72}
-              value={selectedSlot.subtitle}
-              onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
-            />
-          </label>
-          <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
-            <label className="toggle-row compact">
-              <input
-                type="checkbox"
-                checked={selectedSlot.showBadge}
-                onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
-              />
-              <span>뱃지 표시</span>
-            </label>
-            <label className="toggle-row compact">
-              <input
-                type="checkbox"
-                checked={selectedSlot.showTitle}
-                onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
-              />
-              <span>제목 표시</span>
-            </label>
-            <label className="toggle-row compact">
-              <input
-                type="checkbox"
-                checked={selectedSlot.showSubtitle}
-                onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
-              />
-              <span>설명 표시</span>
-            </label>
-          </div>
-          <div className="prompt-actions">
-            <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
-              선택 화면 프롬프트 복사
-            </button>
-            <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
-              01~10 전체 프롬프트 복사
-            </button>
-          </div>
-          <label className="field">
-            <span>프롬프트 결과 JSON</span>
-            <textarea
-              className="json-paste-area"
-              rows={5}
-              spellCheck={false}
-              value={promptJsonInput}
-              placeholder='{"title":"제목","subtitle":"설명"}'
-              onPaste={handlePromptJsonPaste}
-              onChange={(event) => setPromptJsonInput(event.target.value)}
-            />
-          </label>
-          <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
-            JSON 적용
-          </button>
-          <p className="hint">
-            복사한 프롬프트의 JSON 결과를 붙여넣으면 선택 화면 또는 01~10 전체 화면 문구에 바로 적용됩니다.
-          </p>
-        </section>
+            <section className="panel-section">
+              <div className="section-label">목업 표시</div>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={hideDeviceCutout}
+                  onChange={(event) => setHideDeviceCutout(event.target.checked)}
+                />
+                <span>카메라/아일랜드 숨김</span>
+              </label>
+              <p className="hint">iOS는 다이내믹 아일랜드, Android는 중앙 카메라를 숨깁니다.</p>
+            </section>
 
-        <section className="panel-section export-panel">
-          <div className="section-label">내보내기</div>
-          <label className="field">
-            <span>JPG 품질</span>
-            <input
-              type="range"
-              min={72}
-              max={100}
-              value={Math.round(jpgQuality * 100)}
-              onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
-            />
-          </label>
-          <label className="field">
-            <span>이미지 형식</span>
-            <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
-              <option value="png">PNG</option>
-              <option value="jpg">JPG</option>
-            </select>
-          </label>
-          <button className="primary-action" type="button" onClick={exportZip}>
-            ZIP 내보내기
-          </button>
-          <label className="secondary-action bulk-upload-button" htmlFor="bulk-input">
-            이미지 일괄 추가
-          </label>
-          <input
-            id="bulk-input"
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg"
-            multiple
-            onChange={(event) => handleBulkInput(event, assignFiles)}
-          />
-          <p className="hint">{status}</p>
-        </section>
+            <section className="panel-section">
+              <div className="section-row">
+                <div>
+                  <div className="section-label">템플릿</div>
+                  <p className="hint">선택한 화면에 적용됩니다.</p>
+                </div>
+                <button className="text-action" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
+                  전체 적용
+                </button>
+              </div>
+              <div className="template-list" aria-label="스크린샷 템플릿">
+                {SCREENSHOT_TEMPLATES.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    className={`template-option ${template.id === selectedSlot.templateId ? "is-active" : ""}`}
+                    onClick={() => updateSlotTemplate(selected, template.id)}
+                  >
+                    <span className={`template-mini mini-${template.family}`} aria-hidden="true">
+                      <span />
+                      <i />
+                    </span>
+                    <span>
+                      <strong>{template.label}</strong>
+                      <span>{template.description}</span>
+                    </span>
+                    <em>{template.badge}</em>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <div className="section-label">스크린샷 배경</div>
+              <div className="segmented" role="group" aria-label="스크린샷 배경 방식">
+                {(["tonal", "solid"] as BackgroundMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    className={`segment ${bgMode === mode ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() => setBgMode(mode)}
+                  >
+                    {mode === "tonal" ? "톤 분할" : "단색"}
+                  </button>
+                ))}
+              </div>
+              <div className="swatches" aria-label="스크린샷 컬러 테마">
+                {SCREENSHOT_THEMES.map((screenshotTheme) => (
+                  <button
+                    key={screenshotTheme.id}
+                    type="button"
+                    className={`swatch ${screenshotTheme.id === themeId ? "is-active" : ""}`}
+                    style={{ "--a": screenshotTheme.a, "--b": screenshotTheme.b } as CSSVars}
+                    title={screenshotTheme.label}
+                    aria-label={screenshotTheme.label}
+                    onClick={() => applyScreenshotTheme(screenshotTheme.id)}
+                  />
+                ))}
+              </div>
+              {bgMode === "tonal" ? (
+                <div className="gradient-editor">
+                  <label className="field">
+                    <span>그라데이션 종류</span>
+                    <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
+                      <option value="linear">선형</option>
+                      <option value="radial">방사형</option>
+                    </select>
+                  </label>
+                  {gradientType === "linear" ? (
+                    <label className="field">
+                      <span>각도</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={359}
+                        value={gradientAngle}
+                        onChange={(event) => setGradientAngle(Number(event.target.value))}
+                      />
+                    </label>
+                  ) : null}
+                  <div className="gradient-heading">
+                    <span>컬러 스탑</span>
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={addGradientStop}
+                      disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
+                    >
+                      스탑 추가
+                    </button>
+                  </div>
+                  <div className="gradient-stop-list">
+                    {normalizeGradientStops(gradientStops).map((stop) => (
+                      <div className="gradient-stop-row" key={stop.id}>
+                        <input
+                          aria-label={`${stop.position}% 컬러`}
+                          type="color"
+                          value={stop.color}
+                          onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
+                        />
+                        <input
+                          aria-label={`${stop.color} 위치`}
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={stop.position}
+                          onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                        />
+                        <input
+                          aria-label={`${stop.color} 위치 값`}
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={stop.position}
+                          onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                        />
+                        <input
+                          className="hex-input"
+                          aria-label={`${stop.color} HEX 값`}
+                          spellCheck={false}
+                          value={gradientHexDrafts[stop.id] ?? stop.color}
+                          onBlur={() => commitGradientStopHex(stop)}
+                          onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
+                        />
+                        <button
+                          className="text-action stop-remove"
+                          type="button"
+                          onClick={() => removeGradientStop(stop.id)}
+                          disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <label className="field color-field">
+                  <span>단색 컬러</span>
+                  <input
+                    type="color"
+                    value={getSolidGradientColor(gradientConfig)}
+                    onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
+                  />
+                  <input
+                    className="hex-input"
+                    aria-label="단색 HEX 값"
+                    spellCheck={false}
+                    value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
+                    onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
+                    onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
+                  />
+                </label>
+              )}
+              <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
+            </section>
+          </>
+        )}
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" onMouseDownCapture={handleWorkspaceMouseDown}>
         <header className="topbar">
           <div>
             <p className="eyebrow">컬러 스토어 미리보기</p>
@@ -777,6 +937,17 @@ export default function Page() {
                 <span>설명 모두 끄기</span>
               </label>
             </div>
+            <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
+              이미지 일괄 추가
+            </label>
+            <input
+              id="bulk-input"
+              className="visually-hidden"
+              type="file"
+              accept="image/png,image/jpeg"
+              multiple
+              onChange={(event) => handleBulkInput(event, assignFiles)}
+            />
             <button className="secondary-action" type="button" onClick={resetCopy}>
               기본값 복원
             </button>
@@ -815,15 +986,15 @@ export default function Page() {
                   key={index}
                 >
                   <div className="shot-toolbar">
-                    <button className="slot-button" type="button" onClick={() => setSelected(index)}>
+                    <button className="slot-button" type="button" onClick={() => selectSlot(index)}>
                       {String(index + 1).padStart(2, "0")}번 · {template.label}
                     </button>
                   </div>
                   <div
                     className={`shot-preview ${draggingSlot === index ? "is-dragging" : ""}`}
                     tabIndex={0}
-                    onClick={() => setSelected(index)}
-                    onFocus={() => setSelected(index)}
+                    onClick={() => selectSlot(index)}
+                    onFocus={() => selectSlot(index)}
                     onDragEnter={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -853,7 +1024,10 @@ export default function Page() {
                         {showSubtitle ? <p className="copy-subtitle">{slot.subtitle}</p> : null}
                       </div>
                     ) : null}
-                    <div className={`device-frame ${platform.deviceClass}`}>
+                    <div
+                      className={`device-frame ${platform.deviceClass}`}
+                      style={createDeviceTransformStyle(slot.deviceTransform)}
+                    >
                       <div className="device-screen">
                         {slot.imageDataUrl ? (
                           // User-selected data URLs are local previews, so Next image optimization is not useful here.
@@ -923,6 +1097,9 @@ export default function Page() {
           </div>
         </section>
       </main>
+      <div className={`toast ${toast ? "is-visible" : ""}`} role="status" aria-live="polite">
+        {toast}
+      </div>
     </div>
   );
 }
@@ -935,6 +1112,142 @@ function handleBulkInput(
     void assignFiles(0, Array.from(event.target.files));
   }
   event.target.value = "";
+}
+
+function readStoredDraft(): PersistedDraft | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? normalizeStoredDraft(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredDraft(draft: PersistedDraft) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+  } catch {
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          ...draft,
+          slots: draft.slots.map((slot) => ({ ...slot, imageDataUrl: "" })),
+        }),
+      );
+    } catch {
+      // localStorage can be unavailable or quota-limited; the editor remains fully usable.
+    }
+  }
+}
+
+function normalizeStoredDraft(value: unknown): PersistedDraft | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    version: 2,
+    platformKey: value.platformKey === "android" ? "android" : "ios",
+    bgMode: value.bgMode === "solid" ? "solid" : "tonal",
+    themeId: normalizeThemeId(value.themeId),
+    gradientType: value.gradientType === "radial" ? "radial" : "linear",
+    gradientAngle: typeof value.gradientAngle === "number" ? value.gradientAngle : 135,
+    gradientStops: normalizeStoredGradientStops(value.gradientStops),
+    gradientHexDrafts: isStringRecord(value.gradientHexDrafts) ? value.gradientHexDrafts : {},
+    hideDeviceCutout: value.hideDeviceCutout === true,
+    exportFormat: value.exportFormat === "jpg" ? "jpg" : "png",
+    jpgQuality: typeof value.jpgQuality === "number" ? Math.min(1, Math.max(0.72, value.jpgQuality)) : 0.92,
+    selected: normalizeSelectedIndex(value.selected),
+    slots: normalizeStoredSlots(value.slots),
+  };
+}
+
+function normalizeStoredSlots(value: unknown) {
+  const defaults = createInitialSlots();
+  if (!Array.isArray(value)) {
+    return defaults;
+  }
+
+  return defaults.map((base, index) => {
+    const stored = value[index];
+    if (!isRecord(stored)) {
+      return base;
+    }
+
+    const templateId = normalizeTemplateId(stored.templateId);
+    const template = getTemplateById(templateId);
+    return {
+      ...base,
+      badge: typeof stored.badge === "string" ? stored.badge : template.badge,
+      title: typeof stored.title === "string" ? stored.title : base.title,
+      subtitle: typeof stored.subtitle === "string" ? stored.subtitle : base.subtitle,
+      imageDataUrl: typeof stored.imageDataUrl === "string" ? stored.imageDataUrl : "",
+      imageName: typeof stored.imageName === "string" ? stored.imageName : "",
+      templateId,
+      showBadge: stored.showBadge !== false,
+      showTitle: stored.showTitle !== false,
+      showSubtitle: stored.showSubtitle !== false,
+      deviceTransform: normalizeDeviceTransform(isRecord(stored.deviceTransform) ? stored.deviceTransform : undefined),
+    };
+  });
+}
+
+function normalizeStoredGradientStops(value: unknown) {
+  if (!Array.isArray(value)) {
+    return createGradientStops("#22c55e", "#111827");
+  }
+
+  const stops = value
+    .map((stop, index): GradientStop | null => {
+      if (!isRecord(stop) || typeof stop.color !== "string") {
+        return null;
+      }
+      const color = normalizeHexColor(stop.color);
+      if (!color) {
+        return null;
+      }
+      return {
+        id: typeof stop.id === "string" ? stop.id : `stop-${index + 1}`,
+        color,
+        position: typeof stop.position === "number" ? stop.position : index === 0 ? 0 : 100,
+      };
+    })
+    .filter((stop): stop is GradientStop => Boolean(stop));
+
+  return stops.length >= MIN_GRADIENT_STOPS ? normalizeGradientStops(stops).slice(0, MAX_GRADIENT_STOPS) : createGradientStops("#22c55e", "#111827");
+}
+
+function normalizeThemeId(value: unknown): ThemeId {
+  return typeof value === "string" && SCREENSHOT_THEMES.some((theme) => theme.id === value)
+    ? (value as ThemeId)
+    : "launch-green";
+}
+
+function normalizeTemplateId(value: unknown): TemplateId {
+  return typeof value === "string" && SCREENSHOT_TEMPLATES.some((template) => template.id === value)
+    ? (value as TemplateId)
+    : DEFAULT_TEMPLATE_SEQUENCE[0];
+}
+
+function normalizeSelectedIndex(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) ? Math.min(TOTAL_SLOTS - 1, Math.max(0, value)) : 0;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function createPromptTextUpdate(input: {
@@ -1065,22 +1378,8 @@ async function drawTemplate(
   drawBand(ctx, layout, w, h, theme);
   drawFrameLines(ctx, w, h, theme);
 
-  ctx.save();
   const phone = layout.phone;
-  if (phone.rotate) {
-    ctx.translate(phone.x + phone.width / 2, phone.y + phone.height / 2);
-    ctx.rotate((phone.rotate * Math.PI) / 180);
-    await drawPhone(
-      ctx,
-      { x: -phone.width / 2, y: -phone.height / 2, width: phone.width, height: phone.height },
-      platform,
-      slot.imageDataUrl,
-      hideDeviceCutout,
-    );
-  } else {
-    await drawPhone(ctx, phone, platform, slot.imageDataUrl, hideDeviceCutout);
-  }
-  ctx.restore();
+  await drawTransformedPhone(ctx, phone, platform, slot.imageDataUrl, hideDeviceCutout, slot.deviceTransform, phone.rotate ?? 0);
 
   drawTextGroup(ctx, slot, layout.text, platform, theme);
   if (layout.chips) {
@@ -1287,6 +1586,33 @@ async function drawPhone(
     }
     ctx.restore();
   }
+}
+
+async function drawTransformedPhone(
+  ctx: CanvasRenderingContext2D,
+  rect: Rect,
+  platform: PlatformDef,
+  dataUrl: string,
+  hideDeviceCutout: boolean,
+  transform: DeviceTransform,
+  baseRotate: number,
+) {
+  const normalized = normalizeDeviceTransform(transform);
+  ctx.save();
+  ctx.translate(
+    rect.x + rect.width / 2 + rect.width * (normalized.x / 100),
+    rect.y + rect.height / 2 + rect.height * (normalized.y / 100),
+  );
+  ctx.rotate(((baseRotate + normalized.rotate) * Math.PI) / 180);
+  ctx.scale(normalized.scale, normalized.scale);
+  await drawPhone(
+    ctx,
+    { x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height },
+    platform,
+    dataUrl,
+    hideDeviceCutout,
+  );
+  ctx.restore();
 }
 
 function drawEmptyScreen(ctx: CanvasRenderingContext2D, screen: Rect) {
