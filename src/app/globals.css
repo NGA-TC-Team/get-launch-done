@@ -363,6 +363,12 @@ textarea:focus-visible,
   accent-color: #ffffff;
 }
 
+.toggle-row.compact {
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -471,8 +477,41 @@ textarea:focus-visible,
 .topbar-actions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+.global-hide-controls {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  align-items: center;
+  gap: 6px;
+}
+
+.global-hide-controls label,
+.slot-visibility-toggles label {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #222222;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.global-hide-controls input,
+.slot-visibility-toggles input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #111111;
 }
 
 .topbar-format {
@@ -623,6 +662,10 @@ textarea:focus-visible,
   text-wrap: pretty;
 }
 
+.copy-subtitle:first-child {
+  margin-top: 0;
+}
+
 .device-frame {
   position: absolute;
   z-index: 2;
@@ -715,7 +758,8 @@ textarea:focus-visible,
   margin-top: 10px;
 }
 
-.template-select {
+.template-select,
+.badge-inline-field input {
   min-height: 34px;
   min-width: 0;
   border: 1px solid #bfbfbf;
@@ -725,6 +769,33 @@ textarea:focus-visible,
   padding: 0 8px;
   font-size: 12px;
   font-weight: 900;
+}
+
+.badge-inline-field {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: #555555;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.badge-inline-field input {
+  width: 100%;
+}
+
+.slot-visibility-toggles,
+.visibility-toggle-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.slot-visibility-toggles label {
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 6px;
 }
 
 .file-name {
@@ -745,6 +816,10 @@ textarea:focus-visible,
 .prompt-actions {
   display: grid;
   gap: 8px;
+  margin-top: 12px;
+}
+
+.visibility-toggle-panel {
   margin-top: 12px;
 }
 

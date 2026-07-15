@@ -32,13 +32,18 @@ const MAX_GRADIENT_STOPS = 5;
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
+type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
 
 type Slot = {
+  badge: string;
   title: string;
   subtitle: string;
   imageDataUrl: string;
   imageName: string;
   templateId: TemplateId;
+  showBadge: boolean;
+  showTitle: boolean;
+  showSubtitle: boolean;
 };
 
 type Rect = {
@@ -77,13 +82,22 @@ function createGradientStops(a: string, b: string): GradientStop[] {
 }
 
 function createInitialSlots(): Slot[] {
-  return Array.from({ length: TOTAL_SLOTS }, (_, index) => ({
-    title: DEFAULT_COPY[index][0],
-    subtitle: DEFAULT_COPY[index][1],
-    imageDataUrl: "",
-    imageName: "",
-    templateId: DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length],
-  }));
+  return Array.from({ length: TOTAL_SLOTS }, (_, index) => {
+    const templateId = DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length];
+    const template = getTemplateById(templateId);
+
+    return {
+      badge: template.badge,
+      title: DEFAULT_COPY[index][0],
+      subtitle: DEFAULT_COPY[index][1],
+      imageDataUrl: "",
+      imageName: "",
+      templateId,
+      showBadge: true,
+      showTitle: true,
+      showSubtitle: true,
+    };
+  });
 }
 
 export default function Page() {
@@ -153,21 +167,34 @@ export default function Page() {
     setStatus(`${loaded.length}개의 이미지를 추가했습니다.`);
   }
 
-  function updateSelectedSlot(update: Partial<Slot>) {
+  function updateSlot(index: number, update: Partial<Slot>) {
     setSlots((current) =>
-      current.map((slot, index) => (index === selected ? { ...slot, ...update } : slot)),
+      current.map((slot, slotIndex) => (slotIndex === index ? { ...slot, ...update } : slot)),
     );
+  }
+
+  function updateSelectedSlot(update: Partial<Slot>) {
+    updateSlot(selected, update);
   }
 
   function updateSlotTemplate(index: number, templateId: TemplateId) {
-    setSlots((current) =>
-      current.map((slot, slotIndex) => (slotIndex === index ? { ...slot, templateId } : slot)),
-    );
+    const template = getTemplateById(templateId);
+    updateSlot(index, { templateId, badge: template.badge });
   }
 
   function applyTemplateToAll(templateId: TemplateId) {
-    setSlots((current) => current.map((slot) => ({ ...slot, templateId })));
+    const template = getTemplateById(templateId);
+    setSlots((current) => current.map((slot) => ({ ...slot, templateId, badge: template.badge })));
     setStatus("선택한 템플릿을 모든 화면에 적용했습니다.");
+  }
+
+  function setAllTextVisibility(key: TextVisibilityKey, visible: boolean) {
+    setSlots((current) => current.map((slot) => ({ ...slot, [key]: visible })));
+    setStatus(`${getVisibilityLabel(key)} 표시를 모든 화면에서 ${visible ? "켰습니다" : "껐습니다"}.`);
+  }
+
+  function isEveryTextHidden(key: TextVisibilityKey) {
+    return slots.every((slot) => !slot[key]);
   }
 
   function applyScreenshotTheme(nextThemeId: ThemeId) {
@@ -232,9 +259,13 @@ export default function Page() {
     setSlots((current) =>
       current.map((slot, index) => ({
         ...slot,
+        badge: getTemplateById(DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length]).badge,
         title: DEFAULT_COPY[index][0],
         subtitle: DEFAULT_COPY[index][1],
         templateId: DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length],
+        showBadge: true,
+        showTitle: true,
+        showSubtitle: true,
       })),
     );
     setStatus("기본 한글 문구와 템플릿 배치를 다시 적용했습니다.");
@@ -357,7 +388,7 @@ export default function Page() {
     }
 
     if (result.type === "single") {
-      updateSelectedSlot({ title: result.title, subtitle: result.subtitle });
+      updateSelectedSlot(createPromptTextUpdate(result));
       setStatus("붙여넣은 JSON을 선택한 화면에 적용했습니다.");
       return;
     }
@@ -366,7 +397,7 @@ export default function Page() {
     setSlots((current) =>
       current.map((slot, index) => {
         const screen = screensByPage.get(index + 1);
-        return screen ? { ...slot, title: screen.title, subtitle: screen.subtitle } : slot;
+        return screen ? { ...slot, ...createPromptTextUpdate(screen) } : slot;
       }),
     );
     setSelected(result.screens[0].page - 1);
@@ -597,6 +628,14 @@ export default function Page() {
             </select>
           </label>
           <label className="field">
+            <span>뱃지</span>
+            <input
+              maxLength={18}
+              value={selectedSlot.badge}
+              onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
+            />
+          </label>
+          <label className="field">
             <span>제목</span>
             <textarea
               rows={3}
@@ -614,6 +653,32 @@ export default function Page() {
               onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
             />
           </label>
+          <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showBadge}
+                onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
+              />
+              <span>뱃지 표시</span>
+            </label>
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showTitle}
+                onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
+              />
+              <span>제목 표시</span>
+            </label>
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showSubtitle}
+                onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
+              />
+              <span>설명 표시</span>
+            </label>
+          </div>
           <div className="prompt-actions">
             <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
               선택 화면 프롬프트 복사
@@ -686,6 +751,32 @@ export default function Page() {
             <h2>이미지를 기기에 올리고, 각 화면마다 다른 레이아웃을 선택하세요.</h2>
           </div>
           <div className="topbar-actions">
+            <div className="global-hide-controls" aria-label="전체 텍스트 숨김">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isEveryTextHidden("showBadge")}
+                  onChange={(event) => setAllTextVisibility("showBadge", !event.target.checked)}
+                />
+                <span>뱃지 모두 끄기</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isEveryTextHidden("showTitle")}
+                  onChange={(event) => setAllTextVisibility("showTitle", !event.target.checked)}
+                />
+                <span>제목 모두 끄기</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isEveryTextHidden("showSubtitle")}
+                  onChange={(event) => setAllTextVisibility("showSubtitle", !event.target.checked)}
+                />
+                <span>설명 모두 끄기</span>
+              </label>
+            </div>
             <button className="secondary-action" type="button" onClick={resetCopy}>
               기본값 복원
             </button>
@@ -713,6 +804,10 @@ export default function Page() {
           <div className="stage" style={stageStyle}>
             {slots.map((slot, index) => {
               const template = getTemplateById(slot.templateId);
+              const showBadge = slot.showBadge && Boolean(slot.badge.trim());
+              const showTitle = slot.showTitle && Boolean(slot.title.trim());
+              const showSubtitle = slot.showSubtitle && Boolean(slot.subtitle.trim());
+              const hasCopy = showBadge || showTitle || showSubtitle;
 
               return (
                 <article
@@ -751,11 +846,13 @@ export default function Page() {
                       void assignFiles(index, Array.from(event.dataTransfer.files));
                     }}
                   >
-                    <div className="copy-block">
-                      <span className="template-badge">{template.badge}</span>
-                      <h3>{slot.title}</h3>
-                      <p>{slot.subtitle}</p>
-                    </div>
+                    {hasCopy ? (
+                      <div className="copy-block">
+                        {showBadge ? <span className="template-badge">{slot.badge}</span> : null}
+                        {showTitle ? <h3>{slot.title}</h3> : null}
+                        {showSubtitle ? <p className="copy-subtitle">{slot.subtitle}</p> : null}
+                      </div>
+                    ) : null}
                     <div className={`device-frame ${platform.deviceClass}`}>
                       <div className="device-screen">
                         {slot.imageDataUrl ? (
@@ -783,6 +880,41 @@ export default function Page() {
                         </option>
                       ))}
                     </select>
+                    <label className="badge-inline-field">
+                      <span>뱃지</span>
+                      <input
+                        aria-label={`${index + 1}번 뱃지`}
+                        maxLength={18}
+                        value={slot.badge}
+                        onChange={(event) => updateSlot(index, { badge: event.target.value })}
+                      />
+                    </label>
+                    <div className="slot-visibility-toggles" aria-label={`${index + 1}번 텍스트 표시`}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showBadge}
+                          onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
+                        />
+                        <span>뱃지</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showTitle}
+                          onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
+                        />
+                        <span>제목</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showSubtitle}
+                          onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
+                        />
+                        <span>설명</span>
+                      </label>
+                    </div>
                     <span className="file-name">{slot.imageName || "이미지 없음"}</span>
                   </div>
                 </article>
@@ -803,6 +935,34 @@ function handleBulkInput(
     void assignFiles(0, Array.from(event.target.files));
   }
   event.target.value = "";
+}
+
+function createPromptTextUpdate(input: {
+  badge?: string;
+  title: string;
+  subtitle: string;
+  showBadge?: boolean;
+  showTitle?: boolean;
+  showSubtitle?: boolean;
+}): Partial<Slot> {
+  return {
+    ...(input.badge !== undefined ? { badge: input.badge } : {}),
+    title: input.title,
+    subtitle: input.subtitle,
+    ...(input.showBadge !== undefined ? { showBadge: input.showBadge } : {}),
+    ...(input.showTitle !== undefined ? { showTitle: input.showTitle } : {}),
+    ...(input.showSubtitle !== undefined ? { showSubtitle: input.showSubtitle } : {}),
+  };
+}
+
+function getVisibilityLabel(key: TextVisibilityKey) {
+  if (key === "showBadge") {
+    return "뱃지";
+  }
+  if (key === "showTitle") {
+    return "제목";
+  }
+  return "설명";
 }
 
 function hasFileDrag(event: DragEvent<HTMLElement>) {
@@ -1149,23 +1309,71 @@ function drawTextGroup(
   platform: PlatformDef,
   theme: ScreenshotTheme,
 ) {
+  const badgeText = slot.badge.trim();
+  const visibleBadge = slot.showBadge && badgeText;
+  const visibleTitle = slot.showTitle && slot.title.trim();
+  const visibleSubtitle = slot.showSubtitle && slot.subtitle.trim();
+  if (!visibleBadge && !visibleTitle && !visibleSubtitle) {
+    return;
+  }
+
   const ios = platform.deviceClass === "ios";
   const titleSize = Math.round(platform.width * (ios ? 0.086 : 0.072));
   const subtitleSize = Math.round(platform.width * (ios ? 0.038 : 0.032));
+  const badgeSize = Math.round(platform.width * (ios ? 0.034 : 0.03));
   const lineHeight = Math.round(titleSize * 1.08);
   const textX = rect.align === "center" ? rect.x + rect.width / 2 : rect.align === "right" ? rect.x + rect.width : rect.x;
+  let textY = rect.y;
 
   ctx.save();
   ctx.fillStyle = theme.foreground;
   ctx.textAlign = rect.align;
   ctx.textBaseline = "top";
-  ctx.font = `900 ${titleSize}px Arial, sans-serif`;
-  const used = drawWrappedText(ctx, slot.title, textX, rect.y, rect.width, lineHeight, rect.maxTitleLines);
-  ctx.font = `800 ${subtitleSize}px Arial, sans-serif`;
-  ctx.fillStyle = theme.muted;
-  const subtitleY = rect.y + used + subtitleSize * 0.68;
-  drawWrappedText(ctx, slot.subtitle, textX, subtitleY, rect.width, Math.round(subtitleSize * 1.24), rect.maxSubtitleLines);
+  if (visibleBadge) {
+    textY += drawBadge(ctx, badgeText, textX, textY, rect.width, rect.align, badgeSize, theme);
+    textY += Math.round(badgeSize * 0.7);
+  }
+  if (visibleTitle) {
+    ctx.fillStyle = theme.foreground;
+    ctx.font = `900 ${titleSize}px Arial, sans-serif`;
+    const used = drawWrappedText(ctx, slot.title, textX, textY, rect.width, lineHeight, rect.maxTitleLines);
+    textY += used + Math.round(subtitleSize * 0.68);
+  }
+  if (visibleSubtitle) {
+    ctx.font = `800 ${subtitleSize}px Arial, sans-serif`;
+    ctx.fillStyle = theme.muted;
+    drawWrappedText(ctx, slot.subtitle, textX, textY, rect.width, Math.round(subtitleSize * 1.24), rect.maxSubtitleLines);
+  }
   ctx.restore();
+}
+
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  textX: number,
+  y: number,
+  maxWidth: number,
+  align: TextAlign,
+  fontSize: number,
+  theme: ScreenshotTheme,
+) {
+  const paddingX = fontSize * 0.82;
+  const badgeH = fontSize * 1.92;
+  ctx.save();
+  ctx.font = `900 ${fontSize}px Arial, sans-serif`;
+  const measured = ctx.measureText(label).width;
+  const badgeW = Math.min(measured + paddingX * 2, maxWidth);
+  const badgeX = align === "center" ? textX - badgeW / 2 : align === "right" ? textX - badgeW : textX;
+  ctx.strokeStyle = theme.foreground;
+  ctx.lineWidth = Math.max(2, fontSize * 0.12);
+  roundRect(ctx, badgeX, y, badgeW, badgeH, badgeH / 2);
+  ctx.stroke();
+  ctx.fillStyle = theme.foreground;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, badgeX + badgeW / 2, y + badgeH / 2, badgeW - paddingX);
+  ctx.restore();
+  return badgeH;
 }
 
 function drawChips(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {

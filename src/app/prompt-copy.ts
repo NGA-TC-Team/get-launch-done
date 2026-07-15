@@ -1,12 +1,17 @@
 export type PromptSlot = {
+  badge?: string;
   title: string;
   subtitle: string;
   templateId: string;
+  showBadge?: boolean;
+  showTitle?: boolean;
+  showSubtitle?: boolean;
 };
 
 export type PromptTemplate = {
   id: string;
   label: string;
+  badge?: string;
   prompt: string;
 };
 
@@ -19,8 +24,12 @@ export type ParsedPromptJson =
   | {
       ok: true;
       type: "single";
+      badge?: string;
       title: string;
       subtitle: string;
+      showBadge?: boolean;
+      showTitle?: boolean;
+      showSubtitle?: boolean;
     }
   | {
       ok: true;
@@ -34,8 +43,12 @@ export type ParsedPromptJson =
 
 export type ParsedPromptScreen = {
   page: number;
+  badge?: string;
   title: string;
   subtitle: string;
+  showBadge?: boolean;
+  showTitle?: boolean;
+  showSubtitle?: boolean;
 };
 
 type ParsedPromptScreenResult =
@@ -70,8 +83,10 @@ export function buildPromptForSlot({
     `템플릿 ID: ${template.id}`,
     "",
     "현재 임시 문구:",
+    `뱃지: ${slot.badge ?? template.badge ?? ""}`,
     `제목: ${slot.title}`,
     `설명: ${slot.subtitle}`,
+    `표시 상태: 뱃지 ${formatVisible(slot.showBadge)}, 제목 ${formatVisible(slot.showTitle)}, 설명 ${formatVisible(slot.showSubtitle)}`,
     "",
     "아래 템플릿 프롬프트를 기준으로 이 프로젝트에 맞는 스토어 스크린샷 문구를 작성해줘.",
     "응답은 반드시 아래 JSON 스키마를 만족하는 JSON 객체만 출력한다. Markdown, 코드블록, 설명 문장을 붙이지 마라.",
@@ -79,7 +94,7 @@ export function buildPromptForSlot({
     ...buildSingleScreenSchemaLines(),
     "",
     "응답 예시:",
-    '{ "title": "선택 화면 제목", "subtitle": "선택 화면 설명" }',
+    '{ "badge": "뱃지", "title": "선택 화면 제목", "subtitle": "선택 화면 설명", "showBadge": true, "showTitle": true, "showSubtitle": true }',
     "",
     template.prompt,
   ].join("\n");
@@ -113,8 +128,8 @@ export function buildPromptForSlots({
     "응답 예시:",
     "{",
     '  "screens": [',
-    '    { "page": 1, "title": "01 제목", "subtitle": "01 설명" },',
-    '    { "page": 2, "title": "02 제목", "subtitle": "02 설명" }',
+    '    { "page": 1, "badge": "예약", "title": "01 제목", "subtitle": "01 설명", "showBadge": true, "showTitle": true, "showSubtitle": true },',
+    '    { "page": 2, "badge": "화면", "title": "02 제목", "subtitle": "02 설명", "showBadge": true, "showTitle": true, "showSubtitle": true }',
     "  ]",
     "}",
     "",
@@ -126,8 +141,10 @@ export function buildPromptForSlots({
           `# ${formatPageNumber(pageNumber)}/${formatPageNumber(totalPages)}`,
           `현재 템플릿: ${template.label}`,
           `템플릿 ID: ${template.id}`,
+          `현재 뱃지: ${slot.badge ?? template.badge}`,
           `현재 제목: ${slot.title}`,
           `현재 설명: ${slot.subtitle}`,
+          `표시 상태: 뱃지 ${formatVisible(slot.showBadge)}, 제목 ${formatVisible(slot.showTitle)}, 설명 ${formatVisible(slot.showSubtitle)}`,
           "",
           template.prompt,
         ].join("\n");
@@ -180,7 +197,13 @@ export function parsePromptJson(text: string, totalPages: number): ParsedPromptJ
     return { ok: false, error: "title과 subtitle 값을 모두 입력해 주세요." };
   }
 
-  return { ok: true, type: "single", title, subtitle };
+  return {
+    ok: true,
+    type: "single",
+    ...readPromptTextOptions(parsed),
+    title,
+    subtitle,
+  };
 }
 
 function getPromptTemplate(templates: readonly PromptTemplate[], templateId: string) {
@@ -196,11 +219,15 @@ function buildSingleScreenSchemaLines() {
     "JSON 스키마:",
     "{",
     '  "type": "object",',
-    '  "required": ["title", "subtitle"],',
+    '  "required": ["badge", "title", "subtitle", "showBadge", "showTitle", "showSubtitle"],',
     '  "additionalProperties": false,',
     '  "properties": {',
+    '    "badge": { "type": "string" },',
     '    "title": { "type": "string", "minLength": 1 },',
-    '    "subtitle": { "type": "string", "minLength": 1 }',
+    '    "subtitle": { "type": "string", "minLength": 1 },',
+    '    "showBadge": { "type": "boolean" },',
+    '    "showTitle": { "type": "boolean" },',
+    '    "showSubtitle": { "type": "boolean" }',
     "  }",
     "}",
   ];
@@ -218,12 +245,16 @@ function buildAllScreensSchemaLines() {
     '      "type": "array",',
     '      "items": {',
     '        "type": "object",',
-    '        "required": ["page", "title", "subtitle"],',
+    '        "required": ["page", "badge", "title", "subtitle", "showBadge", "showTitle", "showSubtitle"],',
     '        "additionalProperties": false,',
     '        "properties": {',
     '          "page": { "type": "integer", "minimum": 1 },',
+    '          "badge": { "type": "string" },',
     '          "title": { "type": "string", "minLength": 1 },',
-    '          "subtitle": { "type": "string", "minLength": 1 }',
+    '          "subtitle": { "type": "string", "minLength": 1 },',
+    '          "showBadge": { "type": "boolean" },',
+    '          "showTitle": { "type": "boolean" },',
+    '          "showSubtitle": { "type": "boolean" }',
     "        }",
     "      }",
     "    }",
@@ -267,7 +298,28 @@ function parsePromptScreen(
     return { ok: false, error: "각 화면에는 title과 subtitle 값이 필요합니다." };
   }
 
-  return { ok: true, screen: { page, title, subtitle } };
+  return {
+    ok: true,
+    screen: {
+      page,
+      ...readPromptTextOptions(value),
+      title,
+      subtitle,
+    },
+  };
+}
+
+function readPromptTextOptions(record: Record<string, unknown>) {
+  return {
+    ...(readOptionalString(record, "badge") !== null ? { badge: readOptionalString(record, "badge") ?? "" } : {}),
+    ...(typeof record.showBadge === "boolean" ? { showBadge: record.showBadge } : {}),
+    ...(typeof record.showTitle === "boolean" ? { showTitle: record.showTitle } : {}),
+    ...(typeof record.showSubtitle === "boolean" ? { showSubtitle: record.showSubtitle } : {}),
+  };
+}
+
+function formatVisible(value: boolean | undefined) {
+  return value === false ? "끔" : "켬";
 }
 
 function parsePageNumber(value: unknown) {
@@ -285,6 +337,11 @@ function parsePageNumber(value: unknown) {
 function readRequiredString(record: Record<string, unknown>, key: string) {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readOptionalString(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
