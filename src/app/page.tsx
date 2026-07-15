@@ -5,7 +5,6 @@ import type {
   ChangeEvent,
   ClipboardEvent,
   DragEvent,
-  MouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +59,6 @@ type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
 type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
-type SidebarMode = "main" | "content";
 type DeviceGestureMode = "move" | "scale" | "rotate";
 
 type Slot = {
@@ -161,7 +159,6 @@ function createInitialSlots(): Slot[] {
 
 export default function Page() {
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("main");
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
@@ -181,11 +178,17 @@ export default function Page() {
   const [isStageDragging, setIsStageDragging] = useState(false);
   const activeDeviceGesture = useRef<DeviceGesture | null>(null);
   const history = useRef(createHistoryState());
+  const slotCardRefs = useRef<Array<HTMLElement | null>>([]);
 
   const platform = platformDefs[platformKey];
   const theme = getThemeById(themeId);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
+  const uploadedCount = slots.filter((slot) => Boolean(slot.imageDataUrl)).length;
+  const missingImageCount = TOTAL_SLOTS - uploadedCount;
+  const hiddenCopyCount = slots.filter((slot) => !slot.showBadge || !slot.showTitle || !slot.showSubtitle).length;
+  const exportFileCount = platformKey === "ios" ? TOTAL_SLOTS * 2 : TOTAL_SLOTS;
+  const releaseReady = missingImageCount === 0;
   const gradientConfig = useMemo<GradientConfig>(
     () => ({
       type: gradientType,
@@ -352,7 +355,18 @@ export default function Page() {
 
   function selectSlot(index: number) {
     setSelected(index);
-    setSidebarMode("content");
+    window.requestAnimationFrame(() => {
+      const card = slotCardRefs.current[index];
+      if (!card) {
+        return;
+      }
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      card.scrollIntoView({
+        block: "nearest",
+        inline: "center",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    });
   }
 
   function updateSlotTemplate(index: number, templateId: TemplateId) {
@@ -612,19 +626,6 @@ export default function Page() {
     applyPromptJsonText(text);
   }
 
-  function handleWorkspaceMouseDown(event: MouseEvent<HTMLElement>) {
-    if (sidebarMode !== "content") {
-      return;
-    }
-
-    const target = event.target;
-    if (target instanceof Element && target.closest(".shot-card")) {
-      return;
-    }
-
-    setSidebarMode("main");
-  }
-
   function startDeviceGesture(event: ReactPointerEvent<HTMLElement>, index: number, mode: DeviceGestureMode) {
     const frame = event.currentTarget.closest(".device-frame");
     if (!(frame instanceof HTMLElement)) {
@@ -723,158 +724,6 @@ export default function Page() {
           </div>
         </div>
 
-        {sidebarMode === "content" ? (
-          <>
-            <section className="panel-section">
-              <div className="section-label">{String(selected + 1).padStart(2, "0")}번 화면 콘텐츠</div>
-              <label className="field">
-                <span>템플릿</span>
-                <select
-                  value={selectedSlot.templateId}
-                  onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
-                >
-                  {SCREENSHOT_TEMPLATES.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>뱃지</span>
-                <input
-                  maxLength={18}
-                  value={selectedSlot.badge}
-                  onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>제목</span>
-                <textarea
-                  rows={3}
-                  maxLength={64}
-                  value={selectedSlot.title}
-                  onChange={(event) => updateSelectedSlot({ title: event.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>설명</span>
-                <textarea
-                  rows={2}
-                  maxLength={72}
-                  value={selectedSlot.subtitle}
-                  onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
-                />
-              </label>
-              <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
-                <label className="toggle-row compact">
-                  <input
-                    type="checkbox"
-                    checked={selectedSlot.showBadge}
-                    onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
-                  />
-                  <span>뱃지 표시</span>
-                </label>
-                <label className="toggle-row compact">
-                  <input
-                    type="checkbox"
-                    checked={selectedSlot.showTitle}
-                    onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
-                  />
-                  <span>제목 표시</span>
-                </label>
-                <label className="toggle-row compact">
-                  <input
-                    type="checkbox"
-                    checked={selectedSlot.showSubtitle}
-                    onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
-                  />
-                  <span>설명 표시</span>
-                </label>
-              </div>
-            </section>
-
-            <section className="panel-section">
-              <div className="section-row">
-                <div>
-                  <div className="section-label">목업 조정</div>
-                  <p className="hint">선택한 화면의 iOS/Android 목업 위치, 회전, 크기를 조정합니다.</p>
-                </div>
-                <button className="text-action" type="button" onClick={resetSelectedDeviceTransform}>
-                  초기화
-                </button>
-              </div>
-              <label className="field">
-                <span>가로 위치 {selectedSlot.deviceTransform.x}%</span>
-                <input
-                  type="range"
-                  min={-50}
-                  max={50}
-                  value={selectedSlot.deviceTransform.x}
-                  onChange={(event) => updateSelectedDeviceTransform({ x: Number(event.target.value) })}
-                />
-              </label>
-              <label className="field">
-                <span>세로 위치 {selectedSlot.deviceTransform.y}%</span>
-                <input
-                  type="range"
-                  min={-50}
-                  max={50}
-                  value={selectedSlot.deviceTransform.y}
-                  onChange={(event) => updateSelectedDeviceTransform({ y: Number(event.target.value) })}
-                />
-              </label>
-              <label className="field">
-                <span>스케일 {selectedSlot.deviceTransform.scale.toFixed(2)}x</span>
-                <input
-                  type="range"
-                  min={0.55}
-                  max={1.6}
-                  step={0.01}
-                  value={selectedSlot.deviceTransform.scale}
-                  onChange={(event) => updateSelectedDeviceTransform({ scale: Number(event.target.value) })}
-                />
-              </label>
-              <label className="field">
-                <span>회전 {selectedSlot.deviceTransform.rotate}도</span>
-                <input
-                  type="range"
-                  min={-45}
-                  max={45}
-                  value={selectedSlot.deviceTransform.rotate}
-                  onChange={(event) => updateSelectedDeviceTransform({ rotate: Number(event.target.value) })}
-                />
-              </label>
-            </section>
-
-            <section className="panel-section">
-              <div className="section-label">프롬프트</div>
-              <div className="prompt-actions">
-                <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
-                  선택 화면 프롬프트 복사
-                </button>
-                <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
-                  01~10 전체 프롬프트 복사
-                </button>
-              </div>
-              <label className="field">
-                <span>프롬프트 결과 JSON</span>
-                <textarea
-                  className="json-paste-area"
-                  rows={5}
-                  spellCheck={false}
-                  value={promptJsonInput}
-                  placeholder='{"title":"제목","subtitle":"설명"}'
-                  onPaste={handlePromptJsonPaste}
-                  onChange={(event) => setPromptJsonInput(event.target.value)}
-                />
-              </label>
-              <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
-                JSON 적용
-              </button>
-            </section>
-          </>
-        ) : (
           <>
             <section className="panel-section">
               <div className="section-label">제출 플랫폼</div>
@@ -1063,42 +912,24 @@ export default function Page() {
               <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
             </section>
           </>
-        )}
       </aside>
 
-      <main className="workspace" onMouseDownCapture={handleWorkspaceMouseDown}>
+      <main className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">컬러 스토어 미리보기</p>
-            <h2>이미지를 기기에 올리고, 각 화면마다 다른 레이아웃을 선택하세요.</h2>
+          <div className="topbar-title">
+            <p className="eyebrow">릴리즈 보드</p>
+            <h2>10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다.</h2>
+            <div className="status-strip" aria-label="작업 상태">
+              <span className={releaseReady ? "is-ready" : "needs-work"}>{releaseReady ? "제출 준비됨" : `${missingImageCount}개 이미지 필요`}</span>
+              <span>{platform.label}</span>
+              <span>{uploadedCount}/{TOTAL_SLOTS} 이미지</span>
+              <span>{exportFileCount}개 파일 생성</span>
+              <span>{String(selected + 1).padStart(2, "0")}번 선택</span>
+              {platformKey === "ios" ? <span>iPhone + iPad ZIP</span> : <span>Google Play ZIP</span>}
+              {hiddenCopyCount ? <span>{hiddenCopyCount}개 화면 숨김 설정</span> : null}
+            </div>
           </div>
           <div className="topbar-actions">
-            <div className="global-hide-controls" aria-label="전체 텍스트 숨김">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isEveryTextHidden("showBadge")}
-                  onChange={(event) => setAllTextVisibility("showBadge", !event.target.checked)}
-                />
-                <span>뱃지 모두 끄기</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isEveryTextHidden("showTitle")}
-                  onChange={(event) => setAllTextVisibility("showTitle", !event.target.checked)}
-                />
-                <span>제목 모두 끄기</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={isEveryTextHidden("showSubtitle")}
-                  onChange={(event) => setAllTextVisibility("showSubtitle", !event.target.checked)}
-                />
-                <span>설명 모두 끄기</span>
-              </label>
-            </div>
             <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
               이미지 일괄 추가
             </label>
@@ -1146,6 +977,9 @@ export default function Page() {
                 <article
                   className={`shot-card layout-${template.family} ${index === selected ? "is-selected" : ""}`}
                   key={index}
+                  ref={(element) => {
+                    slotCardRefs.current[index] = element;
+                  }}
                 >
                   <div className="shot-toolbar">
                     <button className="slot-button" type="button" onClick={() => selectSlot(index)}>
@@ -1255,27 +1089,7 @@ export default function Page() {
                     <div className="drop-indicator">여기에 이미지 놓기</div>
                   </div>
                   <div className="shot-footer">
-                    <select
-                      className="template-select"
-                      aria-label={`${index + 1}번 템플릿 선택`}
-                      value={slot.templateId}
-                      onChange={(event) => updateSlotTemplate(index, event.target.value as TemplateId)}
-                    >
-                      {SCREENSHOT_TEMPLATES.map((templateOption) => (
-                        <option key={templateOption.id} value={templateOption.id}>
-                          {templateOption.label}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="badge-inline-field">
-                      <span>뱃지</span>
-                      <input
-                        aria-label={`${index + 1}번 뱃지`}
-                        maxLength={18}
-                        value={slot.badge}
-                        onChange={(event) => updateSlot(index, { badge: event.target.value })}
-                      />
-                    </label>
+                    <span className="shot-state">{index === selected ? "편집 중" : slot.imageDataUrl ? "이미지 입력됨" : "대기"}</span>
                     <span className="file-name">{slot.imageName || "이미지 없음"}</span>
                   </div>
                 </article>
@@ -1284,6 +1098,248 @@ export default function Page() {
           </div>
         </section>
       </main>
+
+      <aside className="inspector" aria-label="선택 화면 인스펙터">
+        <div className="inspector-header">
+          <div>
+            <p className="eyebrow">선택 화면</p>
+            <h2>{String(selected + 1).padStart(2, "0")}번 페이지</h2>
+          </div>
+          <span className="inspector-badge">{selectedTemplate.label}</span>
+        </div>
+
+        <nav className="page-navigator" aria-label="화면 빠른 이동">
+          {slots.map((slot, index) => (
+            <button
+              key={index}
+              type="button"
+              className={`page-nav-item ${index === selected ? "is-active" : ""} ${slot.imageDataUrl ? "has-image" : "is-empty"}`}
+              aria-current={index === selected ? "page" : undefined}
+              onClick={() => selectSlot(index)}
+            >
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <small>{slot.imageDataUrl ? "입력" : "대기"}</small>
+            </button>
+          ))}
+        </nav>
+
+        <section className="inspector-section">
+          <div className="section-row">
+            <div>
+              <div className="section-label">화면 구성</div>
+              <p className="hint">선택한 페이지의 템플릿과 카피를 편집합니다.</p>
+            </div>
+          </div>
+          <label className="field">
+            <span>템플릿</span>
+            <select
+              value={selectedSlot.templateId}
+              onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+            >
+              {SCREENSHOT_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>뱃지</span>
+            <input
+              maxLength={18}
+              value={selectedSlot.badge}
+              onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>제목</span>
+            <textarea
+              rows={3}
+              maxLength={64}
+              value={selectedSlot.title}
+              onChange={(event) => updateSelectedSlot({ title: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>설명</span>
+            <textarea
+              rows={2}
+              maxLength={72}
+              value={selectedSlot.subtitle}
+              onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
+            />
+          </label>
+          <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showBadge}
+                onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
+              />
+              <span>뱃지</span>
+            </label>
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showTitle}
+                onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
+              />
+              <span>제목</span>
+            </label>
+            <label className="toggle-row compact">
+              <input
+                type="checkbox"
+                checked={selectedSlot.showSubtitle}
+                onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
+              />
+              <span>설명</span>
+            </label>
+          </div>
+        </section>
+
+        <section className="inspector-section">
+          <div className="section-row">
+            <div>
+              <div className="section-label">전체 표시 제어</div>
+              <p className="hint">10개 화면의 텍스트 레이어를 한 번에 켜거나 끕니다.</p>
+            </div>
+          </div>
+          <div className="global-hide-controls" aria-label="전체 텍스트 숨김">
+            <label>
+              <input
+                type="checkbox"
+                checked={isEveryTextHidden("showBadge")}
+                onChange={(event) => setAllTextVisibility("showBadge", !event.target.checked)}
+              />
+              <span>뱃지 모두 끄기</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={isEveryTextHidden("showTitle")}
+                onChange={(event) => setAllTextVisibility("showTitle", !event.target.checked)}
+              />
+              <span>제목 모두 끄기</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={isEveryTextHidden("showSubtitle")}
+                onChange={(event) => setAllTextVisibility("showSubtitle", !event.target.checked)}
+              />
+              <span>설명 모두 끄기</span>
+            </label>
+          </div>
+        </section>
+
+        <section className="inspector-section">
+          <div className="section-row">
+            <div>
+              <div className="section-label">내보내기 검수</div>
+              <p className="hint">ZIP 생성 전에 누락된 화면과 산출물 구성을 확인합니다.</p>
+            </div>
+          </div>
+          <div className="readiness-panel" aria-label="내보내기 준비 상태">
+            <div className={releaseReady ? "readiness-row is-ok" : "readiness-row needs-work"}>
+              <span>이미지</span>
+              <strong>{releaseReady ? "10개 모두 입력" : `${missingImageCount}개 누락`}</strong>
+            </div>
+            <div className="readiness-row">
+              <span>텍스트 숨김</span>
+              <strong>{hiddenCopyCount ? `${hiddenCopyCount}개 화면` : "없음"}</strong>
+            </div>
+            <div className="readiness-row">
+              <span>ZIP 산출물</span>
+              <strong>{exportFileCount}개 {exportFormat.toUpperCase()}</strong>
+            </div>
+            <div className="readiness-row">
+              <span>추가 폴더</span>
+              <strong>{platformKey === "ios" ? "ipad 포함" : "없음"}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="inspector-section">
+          <div className="section-row">
+            <div>
+              <div className="section-label">목업 조정</div>
+              <p className="hint">Shift 드래그는 수평 또는 수직으로만 이동합니다.</p>
+            </div>
+            <button className="text-action" type="button" onClick={resetSelectedDeviceTransform}>
+              초기화
+            </button>
+          </div>
+          <label className="field">
+            <span>가로 위치 {selectedSlot.deviceTransform.x}%</span>
+            <input
+              type="range"
+              min={-50}
+              max={50}
+              value={selectedSlot.deviceTransform.x}
+              onChange={(event) => updateSelectedDeviceTransform({ x: Number(event.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>세로 위치 {selectedSlot.deviceTransform.y}%</span>
+            <input
+              type="range"
+              min={-50}
+              max={50}
+              value={selectedSlot.deviceTransform.y}
+              onChange={(event) => updateSelectedDeviceTransform({ y: Number(event.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>스케일 {selectedSlot.deviceTransform.scale.toFixed(2)}x</span>
+            <input
+              type="range"
+              min={0.55}
+              max={1.6}
+              step={0.01}
+              value={selectedSlot.deviceTransform.scale}
+              onChange={(event) => updateSelectedDeviceTransform({ scale: Number(event.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>회전 {selectedSlot.deviceTransform.rotate}도</span>
+            <input
+              type="range"
+              min={-45}
+              max={45}
+              value={selectedSlot.deviceTransform.rotate}
+              onChange={(event) => updateSelectedDeviceTransform({ rotate: Number(event.target.value) })}
+            />
+          </label>
+        </section>
+
+        <section className="inspector-section">
+          <div className="section-label">프롬프트와 JSON</div>
+          <div className="prompt-actions">
+            <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
+              선택 화면 프롬프트 복사
+            </button>
+            <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
+              01~10 전체 프롬프트 복사
+            </button>
+          </div>
+          <label className="field">
+            <span>프롬프트 결과 JSON</span>
+            <textarea
+              className="json-paste-area"
+              rows={5}
+              spellCheck={false}
+              value={promptJsonInput}
+              placeholder='{"title":"제목","subtitle":"설명"}'
+              onPaste={handlePromptJsonPaste}
+              onChange={(event) => setPromptJsonInput(event.target.value)}
+            />
+          </label>
+          <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
+            JSON 적용
+          </button>
+        </section>
+      </aside>
+
       <div className={`toast ${toast ? "is-visible" : ""}`} role="status" aria-live="polite">
         {toast}
       </div>
