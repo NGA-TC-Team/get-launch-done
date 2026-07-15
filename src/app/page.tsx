@@ -93,7 +93,6 @@ type CanvasLayout = {
     rotate?: number;
   };
   band?: "top" | "bottom";
-  chips?: boolean;
 };
 
 type ZipFile = {
@@ -1575,9 +1574,6 @@ async function drawTemplate(
   await drawTransformedPhone(ctx, phone, platform, slot.imageDataUrl, hideDeviceCutout, slot.deviceTransform, phone.rotate ?? 0);
 
   drawTextGroup(ctx, slot, layout.text, platform, theme);
-  if (layout.chips) {
-    drawChips(ctx, w, h, theme);
-  }
 }
 
 function drawBackground(
@@ -1655,7 +1651,6 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
       return {
         text: { x: w * 0.08, y: h * 0.13, width: w * 0.39, height: h * 0.36, align: "left", maxTitleLines: 4, maxSubtitleLines: 3 },
         phone: { ...small, x: w * 0.54, y: h * 0.31 },
-        chips: true,
       };
     case "split-left":
       return {
@@ -1683,7 +1678,6 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
       return {
         text: { x: w * 0.08, y: h * 0.18, width: w * 0.38, height: h * 0.45, align: "left", maxTitleLines: 4, maxSubtitleLines: 3 },
         phone: { ...small, x: w * 0.54, y: h * 0.2 },
-        chips: true,
       };
     case "corner-focus":
       return {
@@ -1889,26 +1883,6 @@ function drawBadge(
   ctx.fillText(label, badgeX + badgeW / 2, y + badgeH / 2, badgeW - paddingX);
   ctx.restore();
   return badgeH;
-}
-
-function drawChips(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {
-  const labels = ["미리보기", "릴리즈", "제출"];
-  const chipY = h * 0.88;
-  let chipX = w * 0.08;
-  ctx.save();
-  ctx.font = `900 ${Math.round(w * 0.028)}px Arial, sans-serif`;
-  labels.forEach((label) => {
-    const paddingX = w * 0.023;
-    const chipW = ctx.measureText(label).width + paddingX * 2;
-    const chipH = h * 0.028;
-    ctx.fillStyle = theme.foreground;
-    roundRect(ctx, chipX, chipY, chipW, chipH, chipH / 2);
-    ctx.fill();
-    ctx.fillStyle = theme.panel;
-    ctx.fillText(label, chipX + paddingX, chipY + chipH * 0.28);
-    chipX += chipW + w * 0.016;
-  });
-  ctx.restore();
 }
 
 function drawWrappedText(
