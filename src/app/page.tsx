@@ -52,6 +52,9 @@ import { applyLoadedImagesToSlots } from "./slot-images";
 const TOTAL_SLOTS = DEFAULT_COPY.length;
 const MIN_GRADIENT_STOPS = 2;
 const MAX_GRADIENT_STOPS = 5;
+const BADGE_MAX_LENGTH = 18;
+const TITLE_MAX_LENGTH = 64;
+const SUBTITLE_MAX_LENGTH = 72;
 const STORAGE_KEY = "storeshot-draft-v2";
 const HISTORY_LIMIT = 80;
 
@@ -130,6 +133,13 @@ type PersistedDraft = {
   slots: Slot[];
 };
 
+type SlotReadiness = {
+  hasImage: boolean;
+  copyIssues: string[];
+  hiddenLayers: number;
+  isReady: boolean;
+};
+
 function createGradientStops(a: string, b: string): GradientStop[] {
   return [
     { id: "stop-1", color: a, position: 0 },
@@ -157,6 +167,57 @@ function createInitialSlots(): Slot[] {
   });
 }
 
+function getSlotReadiness(slot: Slot): SlotReadiness {
+  const copyIssues = [
+    slot.showBadge && !slot.badge.trim() ? "뱃지" : null,
+    slot.showTitle && !slot.title.trim() ? "제목" : null,
+    slot.showSubtitle && !slot.subtitle.trim() ? "설명" : null,
+  ].filter((item): item is string => Boolean(item));
+  const hiddenLayers = [slot.showBadge, slot.showTitle, slot.showSubtitle].filter((visible) => !visible).length;
+  const hasImage = Boolean(slot.imageDataUrl);
+
+  return {
+    hasImage,
+    copyIssues,
+    hiddenLayers,
+    isReady: hasImage && copyIssues.length === 0,
+  };
+}
+
+function getNextIssueIndex(readiness: SlotReadiness[], selected: number) {
+  for (let offset = 0; offset < readiness.length; offset += 1) {
+    const index = (selected + offset) % readiness.length;
+    if (!readiness[index].isReady) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function getReleaseStatusLabel(missingImageCount: number, copyIssueSlotCount: number) {
+  if (!missingImageCount && !copyIssueSlotCount) {
+    return "제출 준비됨";
+  }
+  if (missingImageCount && copyIssueSlotCount) {
+    return `${missingImageCount}개 이미지 · ${copyIssueSlotCount}개 카피 점검`;
+  }
+  if (missingImageCount) {
+    return `${missingImageCount}개 이미지 필요`;
+  }
+  return `${copyIssueSlotCount}개 카피 점검`;
+}
+
+function getSlotIssueSummary(readiness: SlotReadiness, imageName: string) {
+  if (!readiness.hasImage) {
+    return "이미지 필요";
+  }
+  if (readiness.copyIssues.length) {
+    return `${readiness.copyIssues.join(", ")} 입력 필요`;
+  }
+  return imageName || "이미지 입력됨";
+}
+
 export default function Page() {
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
@@ -172,7 +233,7 @@ export default function Page() {
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
   const [promptJsonInput, setPromptJsonInput] = useState("");
-  const [, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
+  const [status, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
   const [toast, setToast] = useState("");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
@@ -184,11 +245,19 @@ export default function Page() {
   const theme = getThemeById(themeId);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
-  const uploadedCount = slots.filter((slot) => Boolean(slot.imageDataUrl)).length;
+  const slotReadiness = slots.map(getSlotReadiness);
+  const selectedReadiness = slotReadiness[selected];
+  const readySlotCount = slotReadiness.filter((item) => item.isReady).length;
+  const copyIssueSlotCount = slotReadiness.filter((item) => item.copyIssues.length > 0).length;
+  const copyIssueCount = slotReadiness.reduce((sum, item) => sum + item.copyIssues.length, 0);
+  const nextIssueIndex = getNextIssueIndex(slotReadiness, selected);
+  const completionPercent = Math.round((readySlotCount / TOTAL_SLOTS) * 100);
+  const uploadedCount = slotReadiness.filter((item) => item.hasImage).length;
   const missingImageCount = TOTAL_SLOTS - uploadedCount;
   const hiddenCopyCount = slots.filter((slot) => !slot.showBadge || !slot.showTitle || !slot.showSubtitle).length;
   const exportFileCount = platformKey === "ios" ? TOTAL_SLOTS * 2 : TOTAL_SLOTS;
-  const releaseReady = missingImageCount === 0;
+  const releaseReady = slotReadiness.every((item) => item.isReady);
+  const releaseStatusLabel = getReleaseStatusLabel(missingImageCount, copyIssueSlotCount);
   const gradientConfig = useMemo<GradientConfig>(
     () => ({
       type: gradientType,
@@ -266,19 +335,9 @@ export default function Page() {
         return;
       }
 
-      const snapshot = event.shiftKey ? redoHistorySnapshot(history.current) : undoHistorySnapshot(history.current);
-      if (!snapshot) {
-        return;
+      if (applyHistoryStep(event.shiftKey ? "redo" : "undo")) {
+        event.preventDefault();
       }
-
-      const draft = parseDraftSnapshot(snapshot);
-      if (!draft) {
-        return;
-      }
-
-      event.preventDefault();
-      applyDraft(draft);
-      notify(event.shiftKey ? "다시 실행했습니다." : "되돌렸습니다.");
     }
 
     window.addEventListener("keydown", handleHistoryKeyDown);
@@ -290,7 +349,7 @@ export default function Page() {
       "--shot-ratio": platform.ratio,
       "--card-width":
         platformKey === "ios"
-          ? `clamp(204px, calc(100vh - 520px), ${platform.cardWidth}px)`
+          ? `clamp(204px, calc(44vh - 141px), ${platform.cardWidth}px)`
           : `clamp(240px, calc(100vh - 470px), ${platform.cardWidth}px)`,
       "--preview-background": previewBackground,
       "--preview-a": theme.a,
@@ -326,6 +385,25 @@ export default function Page() {
   function notify(message: string) {
     setStatus(message);
     setToast(message);
+  }
+
+  function applyHistoryStep(direction: "undo" | "redo") {
+    const snapshot =
+      direction === "redo" ? redoHistorySnapshot(history.current) : undoHistorySnapshot(history.current);
+    if (!snapshot) {
+      notify(direction === "redo" ? "다시 실행할 작업이 없습니다." : "되돌릴 작업이 없습니다.");
+      return false;
+    }
+
+    const draft = parseDraftSnapshot(snapshot);
+    if (!draft) {
+      notify("작업 이력을 불러오지 못했습니다.");
+      return false;
+    }
+
+    applyDraft(draft);
+    notify(direction === "redo" ? "다시 실행했습니다." : "되돌렸습니다.");
+    return true;
   }
 
   function applyDraft(draft: PersistedDraft) {
@@ -479,6 +557,13 @@ export default function Page() {
   }
 
   async function exportZip() {
+    if (!releaseReady) {
+      const issueIndex = nextIssueIndex >= 0 ? nextIssueIndex : selected;
+      selectSlot(issueIndex);
+      notify(`${String(issueIndex + 1).padStart(2, "0")}번 화면을 먼저 점검하세요. ${releaseStatusLabel}`);
+      return;
+    }
+
     try {
       setStatus("미리보기 이미지를 렌더링하는 중입니다...");
       const files: ZipFile[] = [];
@@ -520,10 +605,10 @@ export default function Page() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setStatus(`${files.length}개 파일을 ZIP으로 내보냈습니다.`);
+      notify(`${files.length}개 파일을 ZIP으로 내보냈습니다.`);
     } catch (error) {
       console.error(error);
-      setStatus("내보내기에 실패했습니다. 콘솔 로그를 확인하세요.");
+      notify("내보내기에 실패했습니다. 콘솔 로그를 확인하세요.");
     }
   }
 
@@ -765,25 +850,29 @@ export default function Page() {
                   전체 적용
                 </button>
               </div>
-              <div className="template-list" aria-label="스크린샷 템플릿">
-                {SCREENSHOT_TEMPLATES.map((template) => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    className={`template-option ${template.id === selectedSlot.templateId ? "is-active" : ""}`}
-                    onClick={() => updateSlotTemplate(selected, template.id)}
-                  >
-                    <span className={`template-mini mini-${template.family}`} aria-hidden="true">
-                      <span />
-                      <i />
-                    </span>
-                    <span>
-                      <strong>{template.label}</strong>
-                      <span>{template.description}</span>
-                    </span>
-                    <em>{template.badge}</em>
-                  </button>
-                ))}
+              <label className="field template-picker">
+                <span>선택 화면 템플릿</span>
+                <select
+                  value={selectedSlot.templateId}
+                  onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+                >
+                  {SCREENSHOT_TEMPLATES.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="template-summary" aria-label="현재 템플릿 요약">
+                <span className={`template-mini mini-${selectedTemplate.family}`} aria-hidden="true">
+                  <span />
+                  <i />
+                </span>
+                <div>
+                  <strong>{selectedTemplate.label}</strong>
+                  <p>{selectedTemplate.description}</p>
+                </div>
+                <em>{selectedTemplate.badge}</em>
               </div>
             </section>
 
@@ -920,7 +1009,7 @@ export default function Page() {
             <p className="eyebrow">릴리즈 보드</p>
             <h2>10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다.</h2>
             <div className="status-strip" aria-label="작업 상태">
-              <span className={releaseReady ? "is-ready" : "needs-work"}>{releaseReady ? "제출 준비됨" : `${missingImageCount}개 이미지 필요`}</span>
+              <span className={releaseReady ? "is-ready" : "needs-work"}>{releaseStatusLabel}</span>
               <span>{platform.label}</span>
               <span>{uploadedCount}/{TOTAL_SLOTS} 이미지</span>
               <span>{exportFileCount}개 파일 생성</span>
@@ -928,8 +1017,30 @@ export default function Page() {
               {platformKey === "ios" ? <span>iPhone + iPad ZIP</span> : <span>Google Play ZIP</span>}
               {hiddenCopyCount ? <span>{hiddenCopyCount}개 화면 숨김 설정</span> : null}
             </div>
+            <p className="activity-line">
+              <span>최근 작업</span>
+              {status}
+            </p>
           </div>
           <div className="topbar-actions">
+            <div className="history-actions" aria-label="작업 이력">
+              <button
+                className="secondary-action"
+                type="button"
+                title="Command+Z"
+                onClick={() => applyHistoryStep("undo")}
+              >
+                되돌리기
+              </button>
+              <button
+                className="secondary-action"
+                type="button"
+                title="Command+Shift+Z"
+                onClick={() => applyHistoryStep("redo")}
+              >
+                다시 실행
+              </button>
+            </div>
             <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
               이미지 일괄 추가
             </label>
@@ -951,23 +1062,52 @@ export default function Page() {
                 <option value="jpg">JPG</option>
               </select>
             </label>
-            <button className="primary-action" type="button" onClick={exportZip}>
-              ZIP 내보내기
-            </button>
+            {exportFormat === "jpg" ? (
+              <label className="topbar-quality">
+                <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
+                <input
+                  type="range"
+                  min={72}
+                  max={100}
+                  value={Math.round(jpgQuality * 100)}
+                  onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
+                />
+              </label>
+            ) : null}
+            <div className="export-action-group">
+              <button
+                className="primary-action"
+                type="button"
+                disabled={!releaseReady}
+                title={releaseReady ? "스토어 제출용 ZIP 파일을 생성합니다." : releaseStatusLabel}
+                onClick={exportZip}
+              >
+                {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+              </button>
+              {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
+            </div>
           </div>
         </header>
 
         <section
-          className={`stage-wrap ${isStageDragging ? "is-stage-dragging" : ""}`}
+          className={`stage-wrap ${isStageDragging ? "is-stage-dragging" : ""} ${uploadedCount ? "" : "has-intake"}`}
           aria-label="스크린샷 미리보기"
           onDragEnter={handleStageDragEnter}
           onDragOver={handleStageDragOver}
           onDragLeave={handleStageDragLeave}
           onDrop={handleStageDrop}
         >
+          {!uploadedCount ? (
+            <div className="stage-intake" aria-label="시작 안내">
+              <strong>이미지 10장을 보드에 드롭하세요</strong>
+              <span>PNG/JPG 여러 장을 놓으면 01번부터 순서대로 채워집니다. 개별 카드는 해당 위치부터 이어서 배치됩니다.</span>
+            </div>
+          ) : null}
           <div className={`stage platform-${platformKey}`} style={stageStyle}>
             {slots.map((slot, index) => {
               const template = getTemplateById(slot.templateId);
+              const readiness = slotReadiness[index];
+              const cardState = readiness.isReady ? "is-ready" : readiness.hasImage ? "needs-review" : "is-empty";
               const showBadge = slot.showBadge && Boolean(slot.badge.trim());
               const showTitle = slot.showTitle && Boolean(slot.title.trim());
               const showSubtitle = slot.showSubtitle && Boolean(slot.subtitle.trim());
@@ -975,7 +1115,7 @@ export default function Page() {
 
               return (
                 <article
-                  className={`shot-card layout-${template.family} ${index === selected ? "is-selected" : ""}`}
+                  className={`shot-card layout-${template.family} ${cardState} ${index === selected ? "is-selected" : ""}`}
                   key={index}
                   ref={(element) => {
                     slotCardRefs.current[index] = element;
@@ -1089,8 +1229,10 @@ export default function Page() {
                     <div className="drop-indicator">여기에 이미지 놓기</div>
                   </div>
                   <div className="shot-footer">
-                    <span className="shot-state">{index === selected ? "편집 중" : slot.imageDataUrl ? "이미지 입력됨" : "대기"}</span>
-                    <span className="file-name">{slot.imageName || "이미지 없음"}</span>
+                    <span className={`shot-state ${cardState}`}>
+                      {index === selected ? "편집 중" : readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기"}
+                    </span>
+                    <span className="file-name">{getSlotIssueSummary(readiness, slot.imageName)}</span>
                   </div>
                 </article>
               );
@@ -1100,28 +1242,87 @@ export default function Page() {
       </main>
 
       <aside className="inspector" aria-label="선택 화면 인스펙터">
-        <div className="inspector-header">
-          <div>
-            <p className="eyebrow">선택 화면</p>
-            <h2>{String(selected + 1).padStart(2, "0")}번 페이지</h2>
+        <div className="inspector-sticky">
+          <div className="inspector-header">
+            <div>
+              <p className="eyebrow">선택 화면</p>
+              <h2>{String(selected + 1).padStart(2, "0")}번 페이지</h2>
+            </div>
+            <span className="inspector-badge">{selectedTemplate.label}</span>
           </div>
-          <span className="inspector-badge">{selectedTemplate.label}</span>
+
+          <nav className="page-navigator" aria-label="화면 빠른 이동">
+            {slots.map((_, index) => {
+              const readiness = slotReadiness[index];
+              const pageState = readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기";
+
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  className={`page-nav-item ${index === selected ? "is-active" : ""} ${readiness.isReady ? "is-ready" : readiness.hasImage ? "needs-review" : "is-empty"}`}
+                  aria-current={index === selected ? "page" : undefined}
+                  onClick={() => selectSlot(index)}
+                >
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <small>{pageState}</small>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        <nav className="page-navigator" aria-label="화면 빠른 이동">
-          {slots.map((slot, index) => (
-            <button
-              key={index}
-              type="button"
-              className={`page-nav-item ${index === selected ? "is-active" : ""} ${slot.imageDataUrl ? "has-image" : "is-empty"}`}
-              aria-current={index === selected ? "page" : undefined}
-              onClick={() => selectSlot(index)}
-            >
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <small>{slot.imageDataUrl ? "입력" : "대기"}</small>
-            </button>
-          ))}
-        </nav>
+        <section className="workflow-panel" aria-label="작업 큐">
+          <div className="workflow-head">
+            <div>
+              <p className="eyebrow">작업 큐</p>
+              <strong>{readySlotCount}/{TOTAL_SLOTS} 화면 준비</strong>
+            </div>
+            <span>{completionPercent}%</span>
+          </div>
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label="전체 준비율"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={completionPercent}
+          >
+            <span style={{ "--progress": `${completionPercent}%` } as CSSVars} />
+          </div>
+          <div className="workflow-checklist">
+            <div className={selectedReadiness.hasImage ? "workflow-check is-ok" : "workflow-check needs-work"}>
+              <span>현재 이미지</span>
+              <strong>{selectedReadiness.hasImage ? selectedSlot.imageName || "입력됨" : "필요"}</strong>
+            </div>
+            <div className={selectedReadiness.copyIssues.length ? "workflow-check needs-work" : "workflow-check is-ok"}>
+              <span>현재 카피</span>
+              <strong>
+                {selectedReadiness.copyIssues.length ? `${selectedReadiness.copyIssues.join(", ")} 입력 필요` : "정상"}
+              </strong>
+            </div>
+            <div className="workflow-check">
+              <span>숨긴 레이어</span>
+              <strong>{selectedReadiness.hiddenLayers ? `${selectedReadiness.hiddenLayers}개` : "없음"}</strong>
+            </div>
+          </div>
+          <button
+            className="workflow-next"
+            type="button"
+            disabled={nextIssueIndex < 0 || nextIssueIndex === selected}
+            onClick={() => {
+              if (nextIssueIndex >= 0) {
+                selectSlot(nextIssueIndex);
+              }
+            }}
+          >
+            {nextIssueIndex < 0
+              ? "모든 화면 준비됨"
+              : nextIssueIndex === selected
+                ? "현재 화면 점검 중"
+                : `${String(nextIssueIndex + 1).padStart(2, "0")}번 점검하기`}
+          </button>
+        </section>
 
         <section className="inspector-section">
           <div className="section-row">
@@ -1144,27 +1345,42 @@ export default function Page() {
             </select>
           </label>
           <label className="field">
-            <span>뱃지</span>
+            <span className="field-label-row">
+              <span>뱃지</span>
+              <small className={selectedSlot.badge.length >= BADGE_MAX_LENGTH ? "is-full" : ""}>
+                {selectedSlot.badge.length}/{BADGE_MAX_LENGTH}
+              </small>
+            </span>
             <input
-              maxLength={18}
+              maxLength={BADGE_MAX_LENGTH}
               value={selectedSlot.badge}
               onChange={(event) => updateSelectedSlot({ badge: event.target.value })}
             />
           </label>
           <label className="field">
-            <span>제목</span>
+            <span className="field-label-row">
+              <span>제목</span>
+              <small className={selectedSlot.title.length >= TITLE_MAX_LENGTH ? "is-full" : ""}>
+                {selectedSlot.title.length}/{TITLE_MAX_LENGTH}
+              </small>
+            </span>
             <textarea
               rows={3}
-              maxLength={64}
+              maxLength={TITLE_MAX_LENGTH}
               value={selectedSlot.title}
               onChange={(event) => updateSelectedSlot({ title: event.target.value })}
             />
           </label>
           <label className="field">
-            <span>설명</span>
+            <span className="field-label-row">
+              <span>설명</span>
+              <small className={selectedSlot.subtitle.length >= SUBTITLE_MAX_LENGTH ? "is-full" : ""}>
+                {selectedSlot.subtitle.length}/{SUBTITLE_MAX_LENGTH}
+              </small>
+            </span>
             <textarea
               rows={2}
-              maxLength={72}
+              maxLength={SUBTITLE_MAX_LENGTH}
               value={selectedSlot.subtitle}
               onChange={(event) => updateSelectedSlot({ subtitle: event.target.value })}
             />
@@ -1242,7 +1458,11 @@ export default function Page() {
           <div className="readiness-panel" aria-label="내보내기 준비 상태">
             <div className={releaseReady ? "readiness-row is-ok" : "readiness-row needs-work"}>
               <span>이미지</span>
-              <strong>{releaseReady ? "10개 모두 입력" : `${missingImageCount}개 누락`}</strong>
+              <strong>{missingImageCount ? `${missingImageCount}개 누락` : "10개 모두 입력"}</strong>
+            </div>
+            <div className={copyIssueCount ? "readiness-row needs-work" : "readiness-row is-ok"}>
+              <span>카피</span>
+              <strong>{copyIssueCount ? `${copyIssueSlotCount}개 화면 점검` : "보이는 문구 정상"}</strong>
             </div>
             <div className="readiness-row">
               <span>텍스트 숨김</span>
@@ -1250,7 +1470,10 @@ export default function Page() {
             </div>
             <div className="readiness-row">
               <span>ZIP 산출물</span>
-              <strong>{exportFileCount}개 {exportFormat.toUpperCase()}</strong>
+              <strong>
+                {exportFileCount}개 {exportFormat.toUpperCase()}
+                {exportFormat === "jpg" ? ` · ${Math.round(jpgQuality * 100)}%` : ""}
+              </strong>
             </div>
             <div className="readiness-row">
               <span>추가 폴더</span>
@@ -1313,7 +1536,17 @@ export default function Page() {
         </section>
 
         <section className="inspector-section">
-          <div className="section-label">프롬프트와 JSON</div>
+          <div className="section-row">
+            <div>
+              <div className="section-label">프롬프트와 JSON</div>
+              <p className="hint">AI가 반환한 JSON을 붙여넣으면 선택 화면 또는 전체 화면 카피에 바로 반영합니다.</p>
+            </div>
+          </div>
+          <div className="prompt-workflow" aria-label="AI 카피 작업 순서">
+            <span>1. 복사</span>
+            <span>2. 생성</span>
+            <span>3. 적용</span>
+          </div>
           <div className="prompt-actions">
             <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
               선택 화면 프롬프트 복사
@@ -1322,6 +1555,17 @@ export default function Page() {
               01~10 전체 프롬프트 복사
             </button>
           </div>
+          <details className="json-schema-note">
+            <summary>JSON 예시 보기</summary>
+            <pre>{`{
+  "badge": "예약",
+  "title": "가까운 매장을 바로 확인",
+  "subtitle": "빈자리와 예약 가능 여부를 한눈에 보세요.",
+  "showBadge": true,
+  "showTitle": true,
+  "showSubtitle": true
+}`}</pre>
+          </details>
           <label className="field">
             <span>프롬프트 결과 JSON</span>
             <textarea
@@ -1334,6 +1578,10 @@ export default function Page() {
               onChange={(event) => setPromptJsonInput(event.target.value)}
             />
           </label>
+          <div className="json-status">
+            <span>입력 상태</span>
+            <strong>{promptJsonInput.trim() ? "JSON 대기 중" : "붙여넣기 필요"}</strong>
+          </div>
           <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
             JSON 적용
           </button>
