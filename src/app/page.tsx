@@ -34,6 +34,7 @@ import {
   normalizeGradientStops,
 } from "./gradients";
 import type { GradientConfig, GradientStop, GradientType } from "./gradients";
+import { getExportTargets } from "./export-targets";
 import { platformDefs } from "./platforms";
 import type { PlatformDef, PlatformKey } from "./platforms";
 import { buildPromptForSlot, buildPromptForSlots, parsePromptJson } from "./prompt-copy";
@@ -468,12 +469,19 @@ export default function Page() {
     try {
       setStatus("미리보기 이미지를 렌더링하는 중입니다...");
       const files: ZipFile[] = [];
-      for (let index = 0; index < slots.length; index += 1) {
-        setStatus(`${index + 1}/${slots.length}번째 이미지를 렌더링하는 중입니다...`);
-        const slot = slots[index];
+      const targets = getExportTargets({
+        platformKey,
+        platform,
+        count: slots.length,
+        extension: exportFormat,
+      });
+      for (let index = 0; index < targets.length; index += 1) {
+        const target = targets[index];
+        setStatus(`${index + 1}/${targets.length}번째 이미지를 렌더링하는 중입니다...`);
+        const slot = slots[target.slotIndex];
         const blob = await renderSlotToBlob({
           slot,
-          platform,
+          platform: target.platform,
           template: getTemplateById(slot.templateId),
           bgMode,
           theme,
@@ -482,9 +490,8 @@ export default function Page() {
           exportFormat,
           jpgQuality,
         });
-        const extension = exportFormat;
         files.push({
-          name: `${platform.storeSlug}-${String(index + 1).padStart(2, "0")}.${extension}`,
+          name: target.name,
           data: new Uint8Array(await blob.arrayBuffer()),
         });
       }
