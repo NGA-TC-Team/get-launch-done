@@ -12,9 +12,12 @@ The editor uses a three-pane workspace:
 - Center pane: the release board with the 10 screenshot pages, upload/drop targets, page status, and visual review.
 - Right pane: selected-page inspector with a 10-page navigator, copy, visibility, template, mockup transform, and prompt JSON operations.
 - The inspector starts with a work queue that shows total completion, current-page image/copy readiness, hidden layer count, and the next page requiring review.
+- Work queue actions resolve the current selected-page issue first: image gaps open a selected-page upload action, copy gaps move to copy mode, and ready pages advance to the next issue.
+- The work queue exposes a compact next-issues list so launch teams can jump between blocked pages without rescanning the horizontal board.
+- The inspector uses task modes for copy, layout, export review, and AI JSON so users see only the controls needed for the current editing task.
 - The inspector includes an export readiness panel so users can see missing images, hidden text layers, generated file count, and iPad folder inclusion before exporting.
 
-The top bar is reserved for project-level state and final actions: undo/redo, upload, reset, format, ZIP export, and a compact recent-activity line for upload, JSON, undo, and export feedback. Per-page editing should happen in the right inspector, not repeated under every page card.
+The top bar is reserved for project-level state and final actions: release progress, undo/redo, upload, reset, format, ZIP export, and a compact guidance line for next steps, upload, JSON, undo, and export feedback. Per-page editing should happen in the right inspector, not repeated under every page card.
 
 ## Visual Direction
 
@@ -33,16 +36,20 @@ The top bar is reserved for project-level state and final actions: undo/redo, up
 - Screenshot copy fields show compact character counters for badge, title, and subtitle so users can tune store-facing copy before export.
 - Export settings stay next to ZIP export. PNG keeps the control compact; JPG reveals a quality slider and mirrors the selected quality in export readiness.
 - Template selection uses native dropdowns with a compact visual summary; avoid long template button lists in the global setup pane.
+- Background presets stay visible in the left pane, while detailed gradient and HEX editing uses progressive disclosure so launch teams are not forced through long advanced forms on every session.
 - Page cards show only page identity, selection state, preview, and file status. Editing controls live in the inspector.
+- Inline layer toggles inside page previews must stay visually quiet by default and become prominent only on selected, hover, or keyboard focus states.
 - Page cards use restrained status states: waiting, review needed, ready, and editing. Status text should explain the next missing input without adding per-card editors.
 - Page navigation in the inspector shows completion status without forcing users to scroll the release board.
-- The selected-page identity and page navigator stay sticky at the top of the inspector so long edit sections do not lose page context.
+- The selected-page identity, page navigator, and inspector mode tabs stay sticky at the top of the inspector so long edit sections do not lose page context.
 - Selecting a page from any control should keep the central release board aligned to that page.
+- Keyboard navigation supports repeated review: left/right arrows move between pages, while Home/End jump to the first or last page without interfering with text inputs.
 - Prompt and JSON operations are shown as a compact three-step rail: copy prompt, generate copy externally, paste/apply JSON.
 - JSON schema examples live in a collapsible note so AI-assisted copywriting remains discoverable without crowding the inspector.
 - Export readiness is shown as operational status, not as a decorative metric block.
-- ZIP export is gated by readiness. If any page is missing an image or visible copy, the export action stays disabled and the work queue points to the next page to review.
+- ZIP export is gated by readiness. If any page is missing an image or visible copy, the export action acts as a guide to the first issue instead of becoming an inert disabled control.
 - Empty states should teach the first action inline: dropping multiple PNG/JPG images fills pages in order, while card-level drops continue from that page.
+- Upload and JSON feedback should name the affected page range or screen count so repeated release work does not require users to infer what changed.
 
 ## Workflow
 
@@ -51,7 +58,7 @@ The top bar is reserved for project-level state and final actions: undo/redo, up
 3. Select a page from the board or the inspector navigator to edit copy, template, visibility, and mockup transform.
 4. The central release board follows the selected page so users keep visual context while editing.
 5. Use the work queue to advance through incomplete pages without manually scanning all 10 cards.
-6. Check export readiness in the inspector, resolve any queued pages, then choose image format and export ZIP from the top bar.
+6. Track release progress from the top bar, resolve any queued pages, then choose image format and export ZIP from the top bar.
 
 ## Responsive Behavior
 

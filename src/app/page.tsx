@@ -57,12 +57,21 @@ const TITLE_MAX_LENGTH = 64;
 const SUBTITLE_MAX_LENGTH = 72;
 const STORAGE_KEY = "storeshot-draft-v2";
 const HISTORY_LIMIT = 80;
+const INITIAL_STATUS = "PNG/JPG 이미지를 드롭하거나 일괄 추가해 01번부터 채우세요.";
 
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
 type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
 type DeviceGestureMode = "move" | "scale" | "rotate";
+type InspectorMode = "copy" | "layout" | "export" | "ai";
+
+const INSPECTOR_MODES: Array<{ id: InspectorMode; label: string; description: string }> = [
+  { id: "copy", label: "카피", description: "문구" },
+  { id: "layout", label: "레이아웃", description: "템플릿" },
+  { id: "export", label: "검수", description: "준비" },
+  { id: "ai", label: "AI", description: "JSON" },
+];
 
 type Slot = {
   badge: string;
@@ -138,6 +147,12 @@ type SlotReadiness = {
   copyIssues: string[];
   hiddenLayers: number;
   isReady: boolean;
+};
+
+type SlotIssue = {
+  index: number;
+  label: string;
+  mode: InspectorMode;
 };
 
 function createGradientStops(a: string, b: string): GradientStop[] {
@@ -218,6 +233,38 @@ function getSlotIssueSummary(readiness: SlotReadiness, imageName: string) {
   return imageName || "이미지 입력됨";
 }
 
+function createSlotIssue(index: number, readiness: SlotReadiness): SlotIssue | null {
+  if (!readiness.hasImage) {
+    return {
+      index,
+      label: "이미지",
+      mode: "export",
+    };
+  }
+  if (readiness.copyIssues.length) {
+    return {
+      index,
+      label: readiness.copyIssues.join(", "),
+      mode: "copy",
+    };
+  }
+  return null;
+}
+
+function formatPageRange(startIndex: number, count: number) {
+  const start = String(startIndex + 1).padStart(2, "0");
+  const end = String(startIndex + count).padStart(2, "0");
+  return count === 1 ? `${start}번` : `${start}~${end}번`;
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
 export default function Page() {
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
@@ -230,10 +277,11 @@ export default function Page() {
   const [hideDeviceCutout, setHideDeviceCutout] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
   const [selected, setSelected] = useState(0);
+  const [inspectorMode, setInspectorMode] = useState<InspectorMode>("copy");
   const [jpgQuality, setJpgQuality] = useState(0.92);
   const [slots, setSlots] = useState<Slot[]>(createInitialSlots);
   const [promptJsonInput, setPromptJsonInput] = useState("");
-  const [status, setStatus] = useState("10개의 미리보기 화면이 준비되었습니다.");
+  const [status, setStatus] = useState(INITIAL_STATUS);
   const [toast, setToast] = useState("");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
@@ -247,6 +295,8 @@ export default function Page() {
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
   const slotReadiness = slots.map(getSlotReadiness);
   const selectedReadiness = slotReadiness[selected];
+  const selectedNeedsImage = !selectedReadiness.hasImage;
+  const selectedNeedsCopy = selectedReadiness.copyIssues.length > 0;
   const readySlotCount = slotReadiness.filter((item) => item.isReady).length;
   const copyIssueSlotCount = slotReadiness.filter((item) => item.copyIssues.length > 0).length;
   const copyIssueCount = slotReadiness.reduce((sum, item) => sum + item.copyIssues.length, 0);
@@ -258,6 +308,10 @@ export default function Page() {
   const exportFileCount = platformKey === "ios" ? TOTAL_SLOTS * 2 : TOTAL_SLOTS;
   const releaseReady = slotReadiness.every((item) => item.isReady);
   const releaseStatusLabel = getReleaseStatusLabel(missingImageCount, copyIssueSlotCount);
+  const visibleIssues = slotReadiness
+    .map((readiness, index) => createSlotIssue(index, readiness))
+    .filter((issue): issue is SlotIssue => Boolean(issue))
+    .slice(0, 4);
   const gradientConfig = useMemo<GradientConfig>(
     () => ({
       type: gradientType,
@@ -267,82 +321,10 @@ export default function Page() {
     [gradientAngle, gradientStops, gradientType],
   );
   const previewBackground = bgMode === "solid" ? getSolidGradientColor(gradientConfig) : createCssGradient(gradientConfig);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      const draft = readStoredDraft();
-      if (draft) {
-        applyDraft(draft);
-        setStatus("브라우저에 저장된 작업을 불러왔습니다.");
-      }
-      setHasHydratedDraft(true);
-    }, 0);
-
-    return () => window.clearTimeout(timeout);
-  }, []);
-
-  useEffect(() => {
-    if (!hasHydratedDraft) {
-      return;
-    }
-
-    const draft: PersistedDraft = {
-      version: 2,
-      platformKey,
-      bgMode,
-      themeId,
-      gradientType,
-      gradientAngle,
-      gradientStops,
-      gradientHexDrafts,
-      hideDeviceCutout,
-      exportFormat,
-      jpgQuality,
-      selected,
-      slots,
-    };
-
-    recordHistorySnapshot(history.current, JSON.stringify(draft), HISTORY_LIMIT);
-    writeStoredDraft(draft);
-  }, [
-    bgMode,
-    exportFormat,
-    gradientAngle,
-    gradientHexDrafts,
-    gradientStops,
-    gradientType,
-    hasHydratedDraft,
-    hideDeviceCutout,
-    jpgQuality,
-    platformKey,
-    selected,
-    slots,
-    themeId,
-  ]);
-
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => setToast(""), 2400);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
-
-  useEffect(() => {
-    function handleHistoryKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
-        return;
-      }
-
-      if (applyHistoryStep(event.shiftKey ? "redo" : "undo")) {
-        event.preventDefault();
-      }
-    }
-
-    window.addEventListener("keydown", handleHistoryKeyDown);
-    return () => window.removeEventListener("keydown", handleHistoryKeyDown);
-  });
+  const backgroundSummary =
+    bgMode === "solid"
+      ? getSolidGradientColor(gradientConfig).toUpperCase()
+      : `${gradientType === "linear" ? `${gradientAngle}도` : "방사형"} · ${gradientConfig.stops.length}스탑`;
 
   const stageStyle = useMemo<CSSVars>(
     () => ({
@@ -365,7 +347,7 @@ export default function Page() {
   async function assignFiles(startIndex: number, files: File[]) {
     const images = files.filter((file) => /^image\/(png|jpe?g)$/i.test(file.type));
     if (!images.length) {
-      setStatus("PNG 또는 JPG 파일만 사용할 수 있습니다.");
+      notify("PNG 또는 JPG 파일만 사용할 수 있습니다.");
       return;
     }
 
@@ -379,7 +361,7 @@ export default function Page() {
 
     setSlots((current) => applyLoadedImagesToSlots(current, startIndex, loaded));
     setSelected(Math.min(startIndex + loaded.length - 1, TOTAL_SLOTS - 1));
-    setStatus(`${loaded.length}개의 이미지를 추가했습니다.`);
+    notify(`${formatPageRange(startIndex, loaded.length)} 화면에 이미지 ${loaded.length}개를 추가했습니다.`);
   }
 
   function notify(message: string) {
@@ -429,6 +411,23 @@ export default function Page() {
 
   function updateSelectedSlot(update: Partial<Slot>) {
     updateSlot(selected, update);
+  }
+
+  function goToSlot(index: number) {
+    const nextIndex = Math.min(Math.max(index, 0), TOTAL_SLOTS - 1);
+    selectSlot(nextIndex);
+    setStatus(`${String(nextIndex + 1).padStart(2, "0")}번 화면을 선택했습니다.`);
+  }
+
+  function moveSelectedSlot(direction: -1 | 1) {
+    const nextIndex = (selected + direction + TOTAL_SLOTS) % TOTAL_SLOTS;
+    goToSlot(nextIndex);
+  }
+
+  function jumpToIssue(issue: SlotIssue) {
+    selectSlot(issue.index);
+    setInspectorMode(issue.mode);
+    setStatus(`${String(issue.index + 1).padStart(2, "0")}번 ${issue.label} 항목을 점검합니다.`);
   }
 
   function selectSlot(index: number) {
@@ -559,7 +558,9 @@ export default function Page() {
   async function exportZip() {
     if (!releaseReady) {
       const issueIndex = nextIssueIndex >= 0 ? nextIssueIndex : selected;
+      const issue = slotReadiness[issueIndex];
       selectSlot(issueIndex);
+      setInspectorMode(issue.copyIssues.length ? "copy" : "export");
       notify(`${String(issueIndex + 1).padStart(2, "0")}번 화면을 먼저 점검하세요. ${releaseStatusLabel}`);
       return;
     }
@@ -651,6 +652,13 @@ export default function Page() {
     setIsStageDragging(false);
     setDraggingSlot(null);
     void assignFiles(0, Array.from(event.dataTransfer.files));
+  }
+
+  function handleSelectedImageInput(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) {
+      void assignFiles(selected, Array.from(event.target.files));
+    }
+    event.target.value = "";
   }
 
   async function copySelectedPrompt() {
@@ -798,6 +806,108 @@ export default function Page() {
     }
   }
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const draft = readStoredDraft();
+      if (draft) {
+        applyDraft(draft);
+        setStatus("브라우저에 저장된 작업을 불러왔습니다.");
+      }
+      setHasHydratedDraft(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedDraft) {
+      return;
+    }
+
+    const draft: PersistedDraft = {
+      version: 2,
+      platformKey,
+      bgMode,
+      themeId,
+      gradientType,
+      gradientAngle,
+      gradientStops,
+      gradientHexDrafts,
+      hideDeviceCutout,
+      exportFormat,
+      jpgQuality,
+      selected,
+      slots,
+    };
+
+    recordHistorySnapshot(history.current, JSON.stringify(draft), HISTORY_LIMIT);
+    writeStoredDraft(draft);
+  }, [
+    bgMode,
+    exportFormat,
+    gradientAngle,
+    gradientHexDrafts,
+    gradientStops,
+    gradientType,
+    hasHydratedDraft,
+    hideDeviceCutout,
+    jpgQuality,
+    platformKey,
+    selected,
+    slots,
+    themeId,
+  ]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setToast(""), 2400);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
+  useEffect(() => {
+    function handleWorkspaceKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        if (applyHistoryStep(event.shiftKey ? "redo" : "undo")) {
+          event.preventDefault();
+        }
+        return;
+      }
+
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveSelectedSlot(1);
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveSelectedSlot(-1);
+        return;
+      }
+
+      if (event.key === "Home") {
+        event.preventDefault();
+        goToSlot(0);
+        return;
+      }
+
+      if (event.key === "End") {
+        event.preventDefault();
+        goToSlot(TOTAL_SLOTS - 1);
+      }
+    }
+
+    window.addEventListener("keydown", handleWorkspaceKeyDown);
+    return () => window.removeEventListener("keydown", handleWorkspaceKeyDown);
+  });
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -903,101 +1013,107 @@ export default function Page() {
                   />
                 ))}
               </div>
-              {bgMode === "tonal" ? (
-                <div className="gradient-editor">
-                  <label className="field">
-                    <span>그라데이션 종류</span>
-                    <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
-                      <option value="linear">선형</option>
-                      <option value="radial">방사형</option>
-                    </select>
-                  </label>
-                  {gradientType === "linear" ? (
+              <details className="advanced-panel">
+                <summary>
+                  <span>고급 배경 설정</span>
+                  <strong>{backgroundSummary}</strong>
+                </summary>
+                {bgMode === "tonal" ? (
+                  <div className="gradient-editor">
                     <label className="field">
-                      <span>각도</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={359}
-                        value={gradientAngle}
-                        onChange={(event) => setGradientAngle(Number(event.target.value))}
-                      />
+                      <span>그라데이션 종류</span>
+                      <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
+                        <option value="linear">선형</option>
+                        <option value="radial">방사형</option>
+                      </select>
                     </label>
-                  ) : null}
-                  <div className="gradient-heading">
-                    <span>컬러 스탑</span>
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={addGradientStop}
-                      disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
-                    >
-                      스탑 추가
-                    </button>
-                  </div>
-                  <div className="gradient-stop-list">
-                    {normalizeGradientStops(gradientStops).map((stop) => (
-                      <div className="gradient-stop-row" key={stop.id}>
+                    {gradientType === "linear" ? (
+                      <label className="field">
+                        <span>각도</span>
                         <input
-                          aria-label={`${stop.position}% 컬러`}
-                          type="color"
-                          value={stop.color}
-                          onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
-                        />
-                        <input
-                          aria-label={`${stop.color} 위치`}
                           type="range"
                           min={0}
-                          max={100}
-                          value={stop.position}
-                          onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                          max={359}
+                          value={gradientAngle}
+                          onChange={(event) => setGradientAngle(Number(event.target.value))}
                         />
-                        <input
-                          aria-label={`${stop.color} 위치 값`}
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={stop.position}
-                          onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
-                        />
-                        <input
-                          className="hex-input"
-                          aria-label={`${stop.color} HEX 값`}
-                          spellCheck={false}
-                          value={gradientHexDrafts[stop.id] ?? stop.color}
-                          onBlur={() => commitGradientStopHex(stop)}
-                          onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
-                        />
-                        <button
-                          className="text-action stop-remove"
-                          type="button"
-                          onClick={() => removeGradientStop(stop.id)}
-                          disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    ))}
+                      </label>
+                    ) : null}
+                    <div className="gradient-heading">
+                      <span>컬러 스탑</span>
+                      <button
+                        className="text-action"
+                        type="button"
+                        onClick={addGradientStop}
+                        disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
+                      >
+                        스탑 추가
+                      </button>
+                    </div>
+                    <div className="gradient-stop-list">
+                      {normalizeGradientStops(gradientStops).map((stop) => (
+                        <div className="gradient-stop-row" key={stop.id}>
+                          <input
+                            aria-label={`${stop.position}% 컬러`}
+                            type="color"
+                            value={stop.color}
+                            onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
+                          />
+                          <input
+                            aria-label={`${stop.color} 위치`}
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={stop.position}
+                            onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                          />
+                          <input
+                            aria-label={`${stop.color} 위치 값`}
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={stop.position}
+                            onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                          />
+                          <input
+                            className="hex-input"
+                            aria-label={`${stop.color} HEX 값`}
+                            spellCheck={false}
+                            value={gradientHexDrafts[stop.id] ?? stop.color}
+                            onBlur={() => commitGradientStopHex(stop)}
+                            onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
+                          />
+                          <button
+                            className="text-action stop-remove"
+                            type="button"
+                            onClick={() => removeGradientStop(stop.id)}
+                            disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <label className="field color-field">
-                  <span>단색 컬러</span>
-                  <input
-                    type="color"
-                    value={getSolidGradientColor(gradientConfig)}
-                    onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
-                  />
-                  <input
-                    className="hex-input"
-                    aria-label="단색 HEX 값"
-                    spellCheck={false}
-                    value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
-                    onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
-                    onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
-                  />
-                </label>
-              )}
+                ) : (
+                  <label className="field color-field">
+                    <span>단색 컬러</span>
+                    <input
+                      type="color"
+                      value={getSolidGradientColor(gradientConfig)}
+                      onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
+                    />
+                    <input
+                      className="hex-input"
+                      aria-label="단색 HEX 값"
+                      spellCheck={false}
+                      value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
+                      onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
+                      onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
+                    />
+                  </label>
+                )}
+              </details>
               <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
             </section>
           </>
@@ -1017,13 +1133,26 @@ export default function Page() {
               {platformKey === "ios" ? <span>iPhone + iPad ZIP</span> : <span>Google Play ZIP</span>}
               {hiddenCopyCount ? <span>{hiddenCopyCount}개 화면 숨김 설정</span> : null}
             </div>
+            <div
+              className="topbar-progress"
+              role="progressbar"
+              aria-label="릴리즈 준비율"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={completionPercent}
+            >
+              <span>
+                <i style={{ "--progress": `${completionPercent}%` } as CSSVars} />
+              </span>
+              <strong>{completionPercent}% 준비</strong>
+            </div>
             <p className="activity-line">
-              <span>최근 작업</span>
+              <span>작업 안내</span>
               {status}
             </p>
           </div>
           <div className="topbar-actions">
-            <div className="history-actions" aria-label="작업 이력">
+            <div className="action-cluster history-actions" aria-label="작업 이력">
               <button
                 className="secondary-action"
                 type="button"
@@ -1041,50 +1170,62 @@ export default function Page() {
                 다시 실행
               </button>
             </div>
-            <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
-              이미지 일괄 추가
-            </label>
-            <input
-              id="bulk-input"
-              className="visually-hidden"
-              type="file"
-              accept="image/png,image/jpeg"
-              multiple
-              onChange={(event) => handleBulkInput(event, assignFiles)}
-            />
-            <button className="secondary-action" type="button" onClick={resetCopy}>
-              기본값 복원
-            </button>
-            <label className="topbar-format">
-              <span>이미지 형식</span>
-              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
-              </select>
-            </label>
-            {exportFormat === "jpg" ? (
-              <label className="topbar-quality">
-                <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
-                <input
-                  type="range"
-                  min={72}
-                  max={100}
-                  value={Math.round(jpgQuality * 100)}
-                  onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
-                />
+            <div className="action-cluster">
+              <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
+                이미지 일괄 추가
               </label>
-            ) : null}
-            <div className="export-action-group">
-              <button
-                className="primary-action"
-                type="button"
-                disabled={!releaseReady}
-                title={releaseReady ? "스토어 제출용 ZIP 파일을 생성합니다." : releaseStatusLabel}
-                onClick={exportZip}
-              >
-                {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+              <input
+                id="bulk-input"
+                className="visually-hidden"
+                type="file"
+                accept="image/png,image/jpeg"
+                multiple
+                onChange={(event) => handleBulkInput(event, assignFiles)}
+              />
+              <button className="secondary-action" type="button" onClick={resetCopy}>
+                기본값 복원
               </button>
-              {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
+            </div>
+            <div className="export-controls">
+              <label className="topbar-format">
+                <span>이미지 형식</span>
+                <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
+              </label>
+              {exportFormat === "jpg" ? (
+                <label className="topbar-quality">
+                  <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
+                  <input
+                    type="range"
+                    min={72}
+                    max={100}
+                    value={Math.round(jpgQuality * 100)}
+                    onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
+                  />
+                </label>
+              ) : null}
+              <div className="export-action-group">
+                <button
+                  className={`primary-action ${releaseReady ? "" : "is-blocked"}`}
+                  type="button"
+                  aria-label={
+                    releaseReady
+                      ? "ZIP 내보내기"
+                      : `검수 후 내보내기. ${releaseStatusLabel}. 첫 점검 항목으로 이동합니다.`
+                  }
+                  title={
+                    releaseReady
+                      ? "스토어 제출용 ZIP 파일을 생성합니다."
+                      : `${releaseStatusLabel} · 클릭하면 첫 점검 항목으로 이동합니다.`
+                  }
+                  onClick={exportZip}
+                >
+                  {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+                </button>
+                {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
+              </div>
             </div>
           </div>
         </header>
@@ -1270,6 +1411,22 @@ export default function Page() {
               );
             })}
           </nav>
+          <div className="inspector-tabs" role="tablist" aria-label="인스펙터 작업 모드">
+            {INSPECTOR_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                role="tab"
+                aria-selected={inspectorMode === mode.id}
+                className={inspectorMode === mode.id ? "is-active" : ""}
+                onClick={() => setInspectorMode(mode.id)}
+              >
+                <span>{mode.label}</span>
+                <small>{mode.description}</small>
+              </button>
+            ))}
+          </div>
+          <p className="shortcut-hint">←/→ 화면 이동 · Home/End 처음/마지막</p>
         </div>
 
         <section className="workflow-panel" aria-label="작업 큐">
@@ -1306,44 +1463,65 @@ export default function Page() {
               <strong>{selectedReadiness.hiddenLayers ? `${selectedReadiness.hiddenLayers}개` : "없음"}</strong>
             </div>
           </div>
-          <button
-            className="workflow-next"
-            type="button"
-            disabled={nextIssueIndex < 0 || nextIssueIndex === selected}
-            onClick={() => {
-              if (nextIssueIndex >= 0) {
-                selectSlot(nextIssueIndex);
-              }
-            }}
-          >
-            {nextIssueIndex < 0
-              ? "모든 화면 준비됨"
-              : nextIssueIndex === selected
-                ? "현재 화면 점검 중"
-                : `${String(nextIssueIndex + 1).padStart(2, "0")}번 점검하기`}
-          </button>
+          {visibleIssues.length ? (
+            <div className="issue-queue" aria-label="다음 점검 화면">
+              <span>다음 점검</span>
+              <div>
+                {visibleIssues.map((issue) => (
+                  <button key={issue.index} type="button" onClick={() => jumpToIssue(issue)}>
+                    {String(issue.index + 1).padStart(2, "0")} · {issue.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="workflow-actions">
+            {selectedNeedsImage ? (
+              <>
+                <label className="workflow-next" htmlFor="selected-slot-input">
+                  선택 화면 이미지 추가
+                </label>
+                <input
+                  id="selected-slot-input"
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  multiple
+                  onChange={handleSelectedImageInput}
+                />
+              </>
+            ) : (
+              <button
+                className="workflow-next"
+                type="button"
+                disabled={!selectedNeedsCopy && nextIssueIndex < 0}
+                onClick={() => {
+                  if (selectedNeedsCopy) {
+                    setInspectorMode("copy");
+                    return;
+                  }
+                  if (nextIssueIndex >= 0) {
+                    selectSlot(nextIssueIndex);
+                  }
+                }}
+              >
+                {selectedNeedsCopy
+                  ? "카피 입력하기"
+                  : nextIssueIndex < 0
+                    ? "모든 화면 준비됨"
+                    : `${String(nextIssueIndex + 1).padStart(2, "0")}번 점검하기`}
+              </button>
+            )}
+          </div>
         </section>
 
-        <section className="inspector-section">
+        <section className="inspector-section" hidden={inspectorMode !== "copy"}>
           <div className="section-row">
             <div>
-              <div className="section-label">화면 구성</div>
-              <p className="hint">선택한 페이지의 템플릿과 카피를 편집합니다.</p>
+              <div className="section-label">카피 편집</div>
+              <p className="hint">선택한 페이지의 뱃지, 제목, 설명과 표시 여부를 조정합니다.</p>
             </div>
           </div>
-          <label className="field">
-            <span>템플릿</span>
-            <select
-              value={selectedSlot.templateId}
-              onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
-            >
-              {SCREENSHOT_TEMPLATES.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.label}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="field">
             <span className="field-label-row">
               <span>뱃지</span>
@@ -1413,7 +1591,7 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="inspector-section">
+        <section className="inspector-section" hidden={inspectorMode !== "copy"}>
           <div className="section-row">
             <div>
               <div className="section-label">전체 표시 제어</div>
@@ -1448,7 +1626,7 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="inspector-section">
+        <section className="inspector-section" hidden={inspectorMode !== "export"}>
           <div className="section-row">
             <div>
               <div className="section-label">내보내기 검수</div>
@@ -1482,16 +1660,30 @@ export default function Page() {
           </div>
         </section>
 
-        <section className="inspector-section">
+        <section className="inspector-section" hidden={inspectorMode !== "layout"}>
           <div className="section-row">
             <div>
-              <div className="section-label">목업 조정</div>
-              <p className="hint">Shift 드래그는 수평 또는 수직으로만 이동합니다.</p>
+              <div className="section-label">템플릿과 목업</div>
+              <p className="hint">선택한 페이지의 배치와 기기 목업 위치를 조정합니다.</p>
             </div>
             <button className="text-action" type="button" onClick={resetSelectedDeviceTransform}>
               초기화
             </button>
           </div>
+          <label className="field">
+            <span>템플릿</span>
+            <select
+              value={selectedSlot.templateId}
+              onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+            >
+              {SCREENSHOT_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="inspector-note">Shift 드래그는 수평 또는 수직으로만 이동합니다.</p>
           <label className="field">
             <span>가로 위치 {selectedSlot.deviceTransform.x}%</span>
             <input
@@ -1535,7 +1727,7 @@ export default function Page() {
           </label>
         </section>
 
-        <section className="inspector-section">
+        <section className="inspector-section" hidden={inspectorMode !== "ai"}>
           <div className="section-row">
             <div>
               <div className="section-label">프롬프트와 JSON</div>
