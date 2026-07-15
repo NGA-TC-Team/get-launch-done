@@ -1,14 +1,26 @@
 "use client";
 
-import type { CSSProperties, ChangeEvent, ClipboardEvent, DragEvent, MouseEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type {
+  CSSProperties,
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  MouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { shouldRenderDeviceCutout } from "./device-mockup";
 import {
   DEFAULT_DEVICE_TRANSFORM,
+  applyDeviceDragDelta,
+  applyDeviceRotateGesture,
+  applyDeviceScaleGesture,
   createDeviceTransformStyle,
+  getPointerAngleDegrees,
+  getPointerDistance,
   normalizeDeviceTransform,
 } from "./device-transform";
-import type { DeviceTransform } from "./device-transform";
+import type { DeviceTransform, Point } from "./device-transform";
 import {
   createCssGradient,
   getSolidGradientColor,
@@ -41,6 +53,7 @@ type ExportFormat = "png" | "jpg";
 type TextAlign = "left" | "center" | "right";
 type TextVisibilityKey = "showBadge" | "showTitle" | "showSubtitle";
 type SidebarMode = "main" | "content";
+type DeviceGestureMode = "move" | "scale" | "rotate";
 
 type Slot = {
   badge: string;
@@ -82,6 +95,20 @@ type ZipFile = {
 };
 
 type CSSVars = CSSProperties & Record<`--${string}`, string | number>;
+
+type DeviceGesture = {
+  mode: DeviceGestureMode;
+  index: number;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startTransform: DeviceTransform;
+  frameWidth: number;
+  frameHeight: number;
+  center: Point;
+  startDistance: number;
+  startAngle: number;
+};
 
 type PersistedDraft = {
   version: 2;
@@ -146,6 +173,7 @@ export default function Page() {
   const [toast, setToast] = useState("");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
+  const activeDeviceGesture = useRef<DeviceGesture | null>(null);
 
   const platform = platformDefs[platformKey];
   const theme = getThemeById(themeId);
@@ -548,6 +576,92 @@ export default function Page() {
     }
 
     setSidebarMode("main");
+  }
+
+  function startDeviceGesture(event: ReactPointerEvent<HTMLElement>, index: number, mode: DeviceGestureMode) {
+    const frame = event.currentTarget.closest(".device-frame");
+    if (!(frame instanceof HTMLElement)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    selectSlot(index);
+
+    const rect = frame.getBoundingClientRect();
+    const center = {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+    const pointer = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    activeDeviceGesture.current = {
+      mode,
+      index,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startTransform: slots[index].deviceTransform,
+      frameWidth: frame.offsetWidth || rect.width,
+      frameHeight: frame.offsetHeight || rect.height,
+      center,
+      startDistance: getPointerDistance(center, pointer),
+      startAngle: getPointerAngleDegrees(center, pointer),
+    };
+
+    try {
+      frame.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail if the pointer is already released; movement still works while over the frame.
+    }
+  }
+
+  function updateDeviceGesture(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = activeDeviceGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const pointer = { x: event.clientX, y: event.clientY };
+    const deviceTransform =
+      gesture.mode === "move"
+        ? applyDeviceDragDelta(gesture.startTransform, {
+            deltaX: event.clientX - gesture.startX,
+            deltaY: event.clientY - gesture.startY,
+            frameWidth: gesture.frameWidth,
+            frameHeight: gesture.frameHeight,
+          })
+        : gesture.mode === "scale"
+          ? applyDeviceScaleGesture(gesture.startTransform, {
+              startDistance: gesture.startDistance,
+              currentDistance: getPointerDistance(gesture.center, pointer),
+            })
+          : applyDeviceRotateGesture(gesture.startTransform, {
+              startAngle: gesture.startAngle,
+              currentAngle: getPointerAngleDegrees(gesture.center, pointer),
+            });
+
+    updateSlot(gesture.index, { deviceTransform });
+  }
+
+  function endDeviceGesture(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = activeDeviceGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return;
+    }
+
+    activeDeviceGesture.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // The browser may have released capture already after pointer cancellation.
+    }
   }
 
   return (
@@ -972,7 +1086,7 @@ export default function Page() {
           onDragLeave={handleStageDragLeave}
           onDrop={handleStageDrop}
         >
-          <div className="stage" style={stageStyle}>
+          <div className={`stage platform-${platformKey}`} style={stageStyle}>
             {slots.map((slot, index) => {
               const template = getTemplateById(slot.templateId);
               const showBadge = slot.showBadge && Boolean(slot.badge.trim());
@@ -1025,8 +1139,12 @@ export default function Page() {
                       </div>
                     ) : null}
                     <div
-                      className={`device-frame ${platform.deviceClass}`}
+                      className={`device-frame ${platform.deviceClass} ${index === selected ? "is-transform-selected" : ""}`}
                       style={createDeviceTransformStyle(slot.deviceTransform)}
+                      onPointerDown={(event) => startDeviceGesture(event, index, "move")}
+                      onPointerMove={updateDeviceGesture}
+                      onPointerUp={endDeviceGesture}
+                      onPointerCancel={endDeviceGesture}
                     >
                       <div className="device-screen">
                         {slot.imageDataUrl ? (
@@ -1038,6 +1156,22 @@ export default function Page() {
                         )}
                       </div>
                       {shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
+                      {index === selected ? (
+                        <div className="device-transform-handles" aria-label="목업 직접 조정">
+                          <button
+                            className="device-transform-handle rotate"
+                            type="button"
+                            aria-label="목업 회전"
+                            onPointerDown={(event) => startDeviceGesture(event, index, "rotate")}
+                          />
+                          <button
+                            className="device-transform-handle scale"
+                            type="button"
+                            aria-label="목업 크기 조절"
+                            onPointerDown={(event) => startDeviceGesture(event, index, "scale")}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                     <div className="drop-indicator">여기에 이미지 놓기</div>
                   </div>

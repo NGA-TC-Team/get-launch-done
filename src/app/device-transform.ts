@@ -21,6 +21,11 @@ export const DEFAULT_DEVICE_TRANSFORM: DeviceTransform = {
   rotate: 0,
 };
 
+export type Point = {
+  x: number;
+  y: number;
+};
+
 export function normalizeDeviceTransform(input: Partial<DeviceTransform> | undefined): DeviceTransform {
   return {
     x: clampNumber(input?.x, -50, 50, DEFAULT_DEVICE_TRANSFORM.x),
@@ -28,6 +33,68 @@ export function normalizeDeviceTransform(input: Partial<DeviceTransform> | undef
     scale: clampNumber(input?.scale, 0.55, 1.6, DEFAULT_DEVICE_TRANSFORM.scale),
     rotate: clampNumber(input?.rotate, -45, 45, DEFAULT_DEVICE_TRANSFORM.rotate),
   };
+}
+
+export function applyDeviceDragDelta(
+  transform: DeviceTransform,
+  {
+    deltaX,
+    deltaY,
+    frameWidth,
+    frameHeight,
+  }: {
+    deltaX: number;
+    deltaY: number;
+    frameWidth: number;
+    frameHeight: number;
+  },
+): DeviceTransform {
+  return normalizeDeviceTransform({
+    ...transform,
+    x: transform.x + (deltaX / Math.max(1, frameWidth)) * 100,
+    y: transform.y + (deltaY / Math.max(1, frameHeight)) * 100,
+  });
+}
+
+export function applyDeviceScaleGesture(
+  transform: DeviceTransform,
+  {
+    startDistance,
+    currentDistance,
+  }: {
+    startDistance: number;
+    currentDistance: number;
+  },
+): DeviceTransform {
+  const distanceRatio = currentDistance / Math.max(1, startDistance);
+  return normalizeDeviceTransform({
+    ...transform,
+    scale: transform.scale * distanceRatio,
+  });
+}
+
+export function applyDeviceRotateGesture(
+  transform: DeviceTransform,
+  {
+    startAngle,
+    currentAngle,
+  }: {
+    startAngle: number;
+    currentAngle: number;
+  },
+): DeviceTransform {
+  return normalizeDeviceTransform({
+    ...transform,
+    rotate: transform.rotate + normalizeAngleDelta(currentAngle - startAngle),
+  });
+}
+
+export function getPointerDistance(center: Point, pointer: Point) {
+  return Math.hypot(pointer.x - center.x, pointer.y - center.y);
+}
+
+export function getPointerAngleDegrees(center: Point, pointer: Point) {
+  return (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI;
 }
 
 export function createDeviceTransformStyle(transform: DeviceTransform): DeviceTransformVars {
@@ -38,6 +105,14 @@ export function createDeviceTransformStyle(transform: DeviceTransform): DeviceTr
     "--device-scale": normalized.scale,
     "--device-rotate": `${normalized.rotate}deg`,
   };
+}
+
+function normalizeAngleDelta(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return ((((value + 180) % 360) + 360) % 360) - 180;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {

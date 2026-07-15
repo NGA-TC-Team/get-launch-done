@@ -561,6 +561,12 @@ textarea:focus-visible,
 }
 
 .stage {
+  --phone-centered-width: 52.6%;
+  --phone-small-width: 47.1%;
+  --phone-large-width: 58%;
+  --copy-title-size: 22.5px;
+  --copy-body-size: 10px;
+  --copy-badge-size: 9.4px;
   display: flex;
   height: 100%;
   min-height: 680px;
@@ -569,6 +575,15 @@ textarea:focus-visible,
   overflow-y: hidden;
   padding: 6px 2px 18px;
   scroll-snap-type: x proximity;
+}
+
+.stage.platform-ios {
+  --phone-centered-width: 58.1%;
+  --phone-small-width: 51.9%;
+  --phone-large-width: 64.3%;
+  --copy-title-size: 27.5px;
+  --copy-body-size: 12.2px;
+  --copy-badge-size: 10.9px;
 }
 
 .shot-card {
@@ -637,11 +652,11 @@ textarea:focus-visible,
 
 .template-badge {
   display: inline-flex;
-  min-height: 24px;
+  min-height: calc(var(--copy-badge-size, 11px) + 13px);
   align-items: center;
   border: 1px solid currentColor;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--copy-badge-size, 11px);
   font-weight: 900;
   margin-bottom: 9px;
   padding: 0 9px;
@@ -684,8 +699,20 @@ textarea:focus-visible,
   background: linear-gradient(145deg, #737373, #151515 28%, #050505 70%, #9f9f9f);
   box-shadow: 0 8px 8px rgba(0, 0, 0, 0.28);
   padding: 2.2%;
+  cursor: grab;
+  touch-action: none;
+  transform-origin: center;
   transform: translate(var(--device-shift-x), var(--device-shift-y)) scale(var(--device-scale))
     rotate(calc(var(--device-base-rotate) + var(--device-rotate)));
+}
+
+.device-frame:active {
+  cursor: grabbing;
+}
+
+.device-frame.is-transform-selected {
+  outline: 2px solid rgba(255, 255, 255, 0.88);
+  outline-offset: 5px;
 }
 
 .device-frame.android {
@@ -742,6 +769,49 @@ textarea:focus-visible,
   top: 4.5%;
   width: 6.2%;
   height: 3%;
+}
+
+.device-transform-handles {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.device-transform-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #111111;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  pointer-events: auto;
+}
+
+.device-transform-handle.scale {
+  right: -12px;
+  bottom: -12px;
+  cursor: nwse-resize;
+}
+
+.device-transform-handle.rotate {
+  top: -42px;
+  left: 50%;
+  cursor: grab;
+  transform: translateX(-50%);
+}
+
+.device-transform-handle.rotate::before {
+  position: absolute;
+  left: 50%;
+  bottom: -25px;
+  width: 2px;
+  height: 24px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.38);
+  content: "";
+  transform: translateX(-50%);
 }
 
 .drop-indicator {
@@ -929,26 +999,26 @@ textarea:focus-visible,
 }
 
 .layout-hero-center .copy-block {
-  top: 7%;
+  top: 8%;
   left: 8%;
   width: 84%;
   text-align: center;
 }
 
 .layout-hero-center .device-frame {
-  left: 15%;
-  bottom: 7%;
-  width: 70%;
+  top: 36%;
+  left: calc((100% - var(--phone-centered-width)) / 2);
+  width: var(--phone-centered-width);
 }
 
 .layout-device-first .device-frame {
-  top: 7%;
-  left: 19%;
-  width: 62%;
+  top: 8%;
+  left: calc((100% - var(--phone-small-width)) / 2);
+  width: var(--phone-small-width);
 }
 
 .layout-device-first .copy-block {
-  bottom: 7%;
+  top: 71%;
   left: 8%;
   width: 84%;
   text-align: center;
@@ -956,40 +1026,40 @@ textarea:focus-visible,
 
 .layout-split-right .copy-block,
 .layout-side-note .copy-block {
-  top: 12%;
+  top: 13%;
   left: 8%;
-  width: 38%;
+  width: 39%;
 }
 
 .layout-split-right .device-frame,
 .layout-side-note .device-frame {
-  right: 7%;
-  bottom: 10%;
-  width: 45%;
+  top: 31%;
+  left: 54%;
+  width: var(--phone-small-width);
 }
 
 .layout-split-left .copy-block {
-  top: 12%;
+  top: 14%;
   right: 8%;
-  width: 38%;
+  width: 39%;
 }
 
 .layout-split-left .device-frame {
-  left: 7%;
-  bottom: 10%;
-  width: 45%;
+  top: 31%;
+  left: 8%;
+  width: var(--phone-small-width);
 }
 
 .layout-diagonal .copy-block {
-  top: 7%;
+  top: 8%;
   left: 8%;
   width: 84%;
 }
 
 .layout-diagonal .device-frame {
-  right: 14%;
-  bottom: 8%;
-  width: 66%;
+  top: 35%;
+  left: calc((100% - var(--phone-centered-width)) / 2 + 4%);
+  width: var(--phone-centered-width);
   --device-base-rotate: -7deg;
 }
 
@@ -1005,9 +1075,9 @@ textarea:focus-visible,
 }
 
 .layout-bottom-band .device-frame {
-  top: 7%;
-  left: 19%;
-  width: 62%;
+  top: 9%;
+  left: calc((100% - var(--phone-small-width)) / 2);
+  width: var(--phone-small-width);
 }
 
 .layout-top-band .copy-block {
@@ -1021,9 +1091,17 @@ textarea:focus-visible,
 }
 
 .layout-top-band .device-frame {
-  left: 16%;
-  bottom: 7%;
-  width: 68%;
+  top: 33%;
+  left: calc((100% - var(--phone-centered-width)) / 2);
+  width: var(--phone-centered-width);
+}
+
+.layout-side-note .copy-block {
+  top: 18%;
+}
+
+.layout-side-note .device-frame {
+  top: 20%;
 }
 
 .layout-side-note .copy-block::after {
@@ -1036,21 +1114,21 @@ textarea:focus-visible,
 }
 
 .layout-corner-focus .copy-block {
-  top: 7%;
+  top: 8%;
   left: 8%;
-  width: 74%;
-}
-
-.layout-corner-focus .device-frame {
-  right: -6%;
-  bottom: -3%;
   width: 72%;
 }
 
+.layout-corner-focus .device-frame {
+  top: 36%;
+  left: 36%;
+  width: var(--phone-large-width);
+}
+
 .layout-poster-stack .device-frame {
-  top: 11%;
-  left: 15%;
-  width: 70%;
+  top: 16%;
+  left: calc((100% - var(--phone-centered-width)) / 2);
+  width: var(--phone-centered-width);
 }
 
 .layout-poster-stack .copy-block {
