@@ -42,17 +42,22 @@ export function applyDeviceDragDelta(
     deltaY,
     frameWidth,
     frameHeight,
+    lockAxis,
   }: {
     deltaX: number;
     deltaY: number;
     frameWidth: number;
     frameHeight: number;
+    lockAxis?: boolean;
   },
 ): DeviceTransform {
+  const nextDeltaX = lockAxis && Math.abs(deltaY) > Math.abs(deltaX) ? 0 : deltaX;
+  const nextDeltaY = lockAxis && Math.abs(deltaX) >= Math.abs(deltaY) ? 0 : deltaY;
+
   return normalizeDeviceTransform({
     ...transform,
-    x: transform.x + (deltaX / Math.max(1, frameWidth)) * 100,
-    y: transform.y + (deltaY / Math.max(1, frameHeight)) * 100,
+    x: transform.x + (nextDeltaX / Math.max(1, frameWidth)) * 100,
+    y: transform.y + (nextDeltaY / Math.max(1, frameHeight)) * 100,
   });
 }
 

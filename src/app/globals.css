@@ -494,8 +494,7 @@ textarea:focus-visible,
   gap: 6px;
 }
 
-.global-hide-controls label,
-.slot-visibility-toggles label {
+.global-hide-controls label {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
@@ -510,8 +509,7 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-.global-hide-controls input,
-.slot-visibility-toggles input {
+.global-hide-controls input {
   width: 14px;
   height: 14px;
   margin: 0;
@@ -569,7 +567,7 @@ textarea:focus-visible,
   --copy-badge-size: 9.4px;
   display: flex;
   height: 100%;
-  min-height: 680px;
+  min-height: 0;
   gap: 18px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -833,32 +831,32 @@ textarea:focus-visible,
 
 .shot-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .template-select,
 .badge-inline-field input {
-  min-height: 34px;
+  min-height: 30px;
   min-width: 0;
   border: 1px solid #bfbfbf;
   border-radius: 8px;
   background: #ffffff;
   color: #111111;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 
 .badge-inline-field {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   color: #555555;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 
@@ -866,17 +864,10 @@ textarea:focus-visible,
   width: 100%;
 }
 
-.slot-visibility-toggles,
 .visibility-toggle-panel {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-}
-
-.slot-visibility-toggles label {
-  justify-content: center;
-  min-height: 32px;
-  padding: 0 6px;
 }
 
 .file-name {
@@ -888,6 +879,32 @@ textarea:focus-visible,
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.preview-visibility-toggles {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 7;
+  display: inline-flex;
+  gap: 5px;
+  color: var(--preview-ink);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.preview-visibility-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  line-height: 1;
+}
+
+.preview-visibility-toggles input {
+  width: 9px;
+  height: 9px;
+  margin: 0;
+  accent-color: currentColor;
 }
 
 .prompt-action {

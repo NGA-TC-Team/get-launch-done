@@ -21,7 +21,7 @@ export const platformDefs: Record<PlatformKey, PlatformDef> = {
     width: 1284,
     height: 2778,
     ratio: "1284 / 2778",
-    cardWidth: 320,
+    cardWidth: 288,
     deviceClass: "ios",
   },
   android: {

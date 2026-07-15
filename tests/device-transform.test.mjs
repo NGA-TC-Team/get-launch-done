@@ -50,6 +50,20 @@ describe("device transform helpers", () => {
     });
   });
 
+  test("Shift 드래그는 더 많이 움직인 축으로만 목업 위치를 변경한다", () => {
+    expect(
+      applyDeviceDragDelta(
+        { x: 4, y: -3, scale: 1, rotate: 0 },
+        { deltaX: 24, deltaY: -60, frameWidth: 240, frameHeight: 600, lockAxis: true },
+      ),
+    ).toEqual({
+      x: 4,
+      y: -13,
+      scale: 1,
+      rotate: 0,
+    });
+  });
+
   test("스케일 핸들 이동 거리를 기준으로 목업 스케일을 변경한다", () => {
     expect(
       applyDeviceScaleGesture(

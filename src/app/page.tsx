@@ -22,6 +22,12 @@ import {
 } from "./device-transform";
 import type { DeviceTransform, Point } from "./device-transform";
 import {
+  createHistoryState,
+  recordHistorySnapshot,
+  redoHistorySnapshot,
+  undoHistorySnapshot,
+} from "./editor-history";
+import {
   createCssGradient,
   getSolidGradientColor,
   normalizeHexColor,
@@ -47,6 +53,7 @@ const TOTAL_SLOTS = DEFAULT_COPY.length;
 const MIN_GRADIENT_STOPS = 2;
 const MAX_GRADIENT_STOPS = 5;
 const STORAGE_KEY = "storeshot-draft-v2";
+const HISTORY_LIMIT = 80;
 
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
@@ -86,7 +93,6 @@ type CanvasLayout = {
   };
   band?: "top" | "bottom";
   chips?: boolean;
-  pageAlign?: "left" | "right";
 };
 
 type ZipFile = {
@@ -174,6 +180,7 @@ export default function Page() {
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
   const activeDeviceGesture = useRef<DeviceGesture | null>(null);
+  const history = useRef(createHistoryState());
 
   const platform = platformDefs[platformKey];
   const theme = getThemeById(themeId);
@@ -193,18 +200,7 @@ export default function Page() {
     const timeout = window.setTimeout(() => {
       const draft = readStoredDraft();
       if (draft) {
-        setPlatformKey(draft.platformKey);
-        setBgMode(draft.bgMode);
-        setThemeId(draft.themeId);
-        setGradientType(draft.gradientType);
-        setGradientAngle(draft.gradientAngle);
-        setGradientStops(draft.gradientStops);
-        setGradientHexDrafts(draft.gradientHexDrafts);
-        setHideDeviceCutout(draft.hideDeviceCutout);
-        setExportFormat(draft.exportFormat);
-        setJpgQuality(draft.jpgQuality);
-        setSlots(draft.slots);
-        setSelected(draft.selected);
+        applyDraft(draft);
         setStatus("브라우저에 저장된 작업을 불러왔습니다.");
       }
       setHasHydratedDraft(true);
@@ -218,7 +214,7 @@ export default function Page() {
       return;
     }
 
-    writeStoredDraft({
+    const draft: PersistedDraft = {
       version: 2,
       platformKey,
       bgMode,
@@ -232,7 +228,10 @@ export default function Page() {
       jpgQuality,
       selected,
       slots,
-    });
+    };
+
+    recordHistorySnapshot(history.current, JSON.stringify(draft), HISTORY_LIMIT);
+    writeStoredDraft(draft);
   }, [
     bgMode,
     exportFormat,
@@ -258,10 +257,38 @@ export default function Page() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  useEffect(() => {
+    function handleHistoryKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
+        return;
+      }
+
+      const snapshot = event.shiftKey ? redoHistorySnapshot(history.current) : undoHistorySnapshot(history.current);
+      if (!snapshot) {
+        return;
+      }
+
+      const draft = parseDraftSnapshot(snapshot);
+      if (!draft) {
+        return;
+      }
+
+      event.preventDefault();
+      applyDraft(draft);
+      notify(event.shiftKey ? "다시 실행했습니다." : "되돌렸습니다.");
+    }
+
+    window.addEventListener("keydown", handleHistoryKeyDown);
+    return () => window.removeEventListener("keydown", handleHistoryKeyDown);
+  });
+
   const stageStyle = useMemo<CSSVars>(
     () => ({
       "--shot-ratio": platform.ratio,
-      "--card-width": `${platform.cardWidth}px`,
+      "--card-width":
+        platformKey === "ios"
+          ? `clamp(204px, calc(100vh - 520px), ${platform.cardWidth}px)`
+          : `clamp(240px, calc(100vh - 470px), ${platform.cardWidth}px)`,
       "--preview-background": previewBackground,
       "--preview-a": theme.a,
       "--preview-b": bgMode === "solid" ? theme.a : theme.b,
@@ -270,7 +297,7 @@ export default function Page() {
       "--preview-panel": theme.panel,
       "--device-ratio": `${IPHONE_17_PRO_DEVICE.widthMm} / ${IPHONE_17_PRO_DEVICE.heightMm}`,
     }),
-    [bgMode, platform.cardWidth, platform.ratio, previewBackground, theme],
+    [bgMode, platform.cardWidth, platform.ratio, platformKey, previewBackground, theme],
   );
 
   async function assignFiles(startIndex: number, files: File[]) {
@@ -296,6 +323,21 @@ export default function Page() {
   function notify(message: string) {
     setStatus(message);
     setToast(message);
+  }
+
+  function applyDraft(draft: PersistedDraft) {
+    setPlatformKey(draft.platformKey);
+    setBgMode(draft.bgMode);
+    setThemeId(draft.themeId);
+    setGradientType(draft.gradientType);
+    setGradientAngle(draft.gradientAngle);
+    setGradientStops(draft.gradientStops);
+    setGradientHexDrafts(draft.gradientHexDrafts);
+    setHideDeviceCutout(draft.hideDeviceCutout);
+    setExportFormat(draft.exportFormat);
+    setJpgQuality(draft.jpgQuality);
+    setSlots(draft.slots);
+    setSelected(draft.selected);
   }
 
   function updateSlot(index: number, update: Partial<Slot>) {
@@ -431,7 +473,6 @@ export default function Page() {
         const slot = slots[index];
         const blob = await renderSlotToBlob({
           slot,
-          index,
           platform,
           template: getTemplateById(slot.templateId),
           bgMode,
@@ -636,6 +677,7 @@ export default function Page() {
             deltaY: event.clientY - gesture.startY,
             frameWidth: gesture.frameWidth,
             frameHeight: gesture.frameHeight,
+            lockAxis: event.shiftKey,
           })
         : gesture.mode === "scale"
           ? applyDeviceScaleGesture(gesture.startTransform, {
@@ -1129,8 +1171,39 @@ export default function Page() {
                       setDraggingSlot(null);
                       setIsStageDragging(false);
                       void assignFiles(index, Array.from(event.dataTransfer.files));
-                    }}
-                  >
+	                    }}
+	                  >
+                    <div
+                      className="preview-visibility-toggles"
+                      aria-label={`${index + 1}번 텍스트 표시`}
+                      onClick={(event) => event.stopPropagation()}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showBadge}
+                          onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
+                        />
+                        <span>뱃지</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showTitle}
+                          onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
+                        />
+                        <span>제목</span>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={slot.showSubtitle}
+                          onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
+                        />
+                        <span>설명</span>
+                      </label>
+                    </div>
                     {hasCopy ? (
                       <div className="copy-block">
                         {showBadge ? <span className="template-badge">{slot.badge}</span> : null}
@@ -1197,32 +1270,6 @@ export default function Page() {
                         onChange={(event) => updateSlot(index, { badge: event.target.value })}
                       />
                     </label>
-                    <div className="slot-visibility-toggles" aria-label={`${index + 1}번 텍스트 표시`}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showBadge}
-                          onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
-                        />
-                        <span>뱃지</span>
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showTitle}
-                          onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
-                        />
-                        <span>제목</span>
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showSubtitle}
-                          onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
-                        />
-                        <span>설명</span>
-                      </label>
-                    </div>
                     <span className="file-name">{slot.imageName || "이미지 없음"}</span>
                   </div>
                 </article>
@@ -1256,6 +1303,14 @@ function readStoredDraft(): PersistedDraft | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     return raw ? normalizeStoredDraft(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseDraftSnapshot(snapshot: string): PersistedDraft | null {
+  try {
+    return normalizeStoredDraft(JSON.parse(snapshot));
   } catch {
     return null;
   }
@@ -1449,7 +1504,6 @@ async function copyText(text: string) {
 
 async function renderSlotToBlob({
   slot,
-  index,
   platform,
   template,
   bgMode,
@@ -1460,7 +1514,6 @@ async function renderSlotToBlob({
   jpgQuality,
 }: {
   slot: Slot;
-  index: number;
   platform: PlatformDef;
   template: ScreenshotTemplate;
   bgMode: BackgroundMode;
@@ -1478,7 +1531,7 @@ async function renderSlotToBlob({
     throw new Error("Canvas is unavailable");
   }
   drawBackground(ctx, canvas.width, canvas.height, bgMode, gradientConfig);
-  await drawTemplate(ctx, canvas, slot, index, platform, template, theme, hideDeviceCutout);
+  await drawTemplate(ctx, canvas, slot, platform, template, theme, hideDeviceCutout);
   const mime = exportFormat === "jpg" ? "image/jpeg" : "image/png";
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -1499,7 +1552,6 @@ async function drawTemplate(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   slot: Slot,
-  index: number,
   platform: PlatformDef,
   template: ScreenshotTemplate,
   theme: ScreenshotTheme,
@@ -1519,7 +1571,6 @@ async function drawTemplate(
   if (layout.chips) {
     drawChips(ctx, w, h, theme);
   }
-  drawPageNumber(ctx, index, w, h, theme, layout.pageAlign ?? "right");
 }
 
 function drawBackground(
@@ -1592,7 +1643,6 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
       return {
         text: { x: w * 0.08, y: h * 0.71, width: w * 0.84, height: h * 0.18, align: "center", maxTitleLines: 3, maxSubtitleLines: 2 },
         phone: { ...small, x: (w - small.width) / 2, y: h * 0.08 },
-        pageAlign: "left",
       };
     case "split-right":
       return {
@@ -1604,7 +1654,6 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
       return {
         text: { x: w * 0.53, y: h * 0.14, width: w * 0.39, height: h * 0.38, align: "left", maxTitleLines: 4, maxSubtitleLines: 3 },
         phone: { ...small, x: w * 0.08, y: h * 0.31 },
-        pageAlign: "left",
       };
     case "diagonal":
       return {
@@ -1628,7 +1677,6 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
         text: { x: w * 0.08, y: h * 0.18, width: w * 0.38, height: h * 0.45, align: "left", maxTitleLines: 4, maxSubtitleLines: 3 },
         phone: { ...small, x: w * 0.54, y: h * 0.2 },
         chips: true,
-        pageAlign: "left",
       };
     case "corner-focus":
       return {
@@ -1853,27 +1901,6 @@ function drawChips(ctx: CanvasRenderingContext2D, w: number, h: number, theme: S
     ctx.fillText(label, chipX + paddingX, chipY + chipH * 0.28);
     chipX += chipW + w * 0.016;
   });
-  ctx.restore();
-}
-
-function drawPageNumber(
-  ctx: CanvasRenderingContext2D,
-  index: number,
-  w: number,
-  h: number,
-  theme: ScreenshotTheme,
-  align: "left" | "right",
-) {
-  ctx.save();
-  ctx.globalAlpha = 0.78;
-  ctx.fillStyle = theme.foreground;
-  ctx.font = `800 ${Math.round(w * 0.026)}px Arial, sans-serif`;
-  ctx.textAlign = align;
-  ctx.fillText(
-    `${String(index + 1).padStart(2, "0")} / ${String(TOTAL_SLOTS).padStart(2, "0")}`,
-    align === "left" ? w * 0.055 : w - w * 0.055,
-    h - h * 0.04,
-  );
   ctx.restore();
 }
 
