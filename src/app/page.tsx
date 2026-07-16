@@ -6,6 +6,7 @@ import type {
   ClipboardEvent,
   DragEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { shouldRenderDeviceCutout } from "./device-mockup";
@@ -65,7 +66,7 @@ const TITLE_MAX_LENGTH = 64;
 const SUBTITLE_MAX_LENGTH = 72;
 const STORAGE_KEY = "storeshot-draft-v2";
 const HISTORY_LIMIT = 80;
-const INITIAL_STATUS = "PNG/JPG 이미지를 드롭하거나 일괄 추가해 01번부터 채우세요.";
+const INITIAL_STATUS = "이미지를 드롭하거나 추가하세요.";
 
 type BackgroundMode = "tonal" | "solid";
 type ExportFormat = "png" | "jpg";
@@ -118,6 +119,75 @@ type ZipFile = {
 };
 
 type CSSVars = CSSProperties & Record<`--${string}`, string | number>;
+
+const ICON_PATHS = {
+  ai: "M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3zm-6 9l.9 2.1L9 15l-2.1.9L6 18l-.9-2.1L3 15l2.1-.9L6 12zm12 2l.8 1.8L21 16l-2.2.8L18 19l-.8-2.2L15 16l2.2-.2L18 14z",
+  arrowLeft: "M14 6l-6 6 6 6M9 12h11",
+  arrowRight: "M10 6l6 6-6 6M4 12h11",
+  badge: "M12 3l2.3 4.6 5.1.7-3.7 3.6.9 5.1-4.6-2.4L7.4 17l.9-5.1-3.7-3.6 5.1-.7L12 3z",
+  board: "M4 5h16v14H4V5zm3 3h4v3H7V8zm6 0h4v3h-4V8zM7 13h4v3H7v-3zm6 0h4v3h-4v-3z",
+  brush: "M15 4l5 5-8.5 8.5c-1.4 1.4-3.3 2-5.1 1.6 1.2-1.1 1.4-2.5.7-3.2-.7-.7-2.1-.5-3.2.7-.4-1.8.2-3.7 1.6-5.1L15 4z",
+  camera: "M5 7h3l1.5-2h5L16 7h3v11H5V7zm7 9a3.5 3.5 0 100-7 3.5 3.5 0 000 7z",
+  check: "M4 12l5 5L20 6",
+  code: "M9 18l-6-6 6-6M15 6l6 6-6 6",
+  copy: "M8 8h11v11H8V8zm-3 8H4V4h12v1",
+  download: "M12 4v9m0 0l4-4m-4 4L8 9M5 19h14",
+  eye: "M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6zm9 2.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  file: "M6 3h8l4 4v14H6V3zm8 0v5h5",
+  folder: "M3 6h7l2 2h9v10H3V6z",
+  image: "M4 5h16v14H4V5zm3 11l4-5 3 4 2-3 3 4M8 9h.1",
+  info: "M12 20a8 8 0 100-16 8 8 0 000 16zm0-11v7m0-10h.1",
+  json: "M8 5H5v14h3M16 5h3v14h-3M10 15l1.5-6M14 9l-1.5 6",
+  keyboard: "M3 6h18v12H3V6zm3 4h.1M9 10h.1M12 10h.1M15 10h.1M18 10h.1M7 14h10",
+  layers: "M12 4l8 4-8 4-8-4 8-4zm-8 8l8 4 8-4M4 16l8 4 8-4",
+  layout: "M4 5h16v14H4V5zm0 5h16M10 10v9",
+  lock: "M7 10V8a5 5 0 0110 0v2M6 10h12v10H6V10z",
+  move: "M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4",
+  palette: "M12 4a8 8 0 00-2 15.7c1.1.2 1.5-.7 1.2-1.4-.4-.9.2-1.3 1-1.3h1.7A6.1 6.1 0 0020 11c0-3.9-3.6-7-8-7zM7.5 11h.1M9 8h.1M13 7.5h.1M16 10h.1",
+  percent: "M7 7h.1M17 17h.1M18 6L6 18M8 7a1 1 0 11-2 0 1 1 0 012 0zm10 10a1 1 0 11-2 0 1 1 0 012 0z",
+  phone: "M8 3h8v18H8V3zm3 15h2",
+  queue: "M5 7h14M5 12h14M5 17h9",
+  reset: "M4 12a8 8 0 111.8 5M4 17v-5h5",
+  rotate: "M4 12a8 8 0 0113.7-5.7L20 8M20 4v4h-4M20 12a8 8 0 01-13.7 5.7L4 16m0 4v-4h4",
+  scale: "M5 19h6M5 19v-6M19 5h-6M19 5v6M5 19L19 5",
+  shield: "M12 3l7 3v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6l7-3z",
+  sliders: "M4 7h5m4 0h7M4 12h9m4 0h3M4 17h3m4 0h9M9 5v4M13 10v4M7 15v4",
+  sparkles: "M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3zm-6 10l.8 2.2L9 16l-2.2.8L6 19l-.8-2.2L3 16l2.2-.8L6 13z",
+  store: "M5 10h14v10H5V10zm1-6h12l2 6H4l2-6zM9 10v10",
+  target: "M12 20a8 8 0 100-16 8 8 0 000 16zm0-4a4 4 0 100-8 4 4 0 000 8zm0-2a2 2 0 100-4 2 2 0 000 4z",
+  text: "M4 6h16M8 6v12M16 6v12M7 18h4M13 18h4",
+  title: "M4 6h16M12 6v12M8 18h8",
+  undo: "M9 7l-5 5 5 5M4 12h10a5 5 0 010 10",
+  upload: "M12 20V9m0 0l-4 4m4-4l4 4M5 5h14",
+  zip: "M7 3h7l4 4v14H7V3zm7 0v5h5M10 7h2m-2 3h2m-2 3h2m-2 3h2",
+} as const;
+
+type IconName = keyof typeof ICON_PATHS;
+
+function Icon({ name, className = "" }: { name: IconName; className?: string }) {
+  return (
+    <svg className={`ui-icon ${className}`.trim()} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
+function IconText({
+  icon,
+  children,
+  className = "",
+}: {
+  icon: IconName;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={`icon-text ${className}`.trim()}>
+      <Icon name={icon} />
+      <span>{children}</span>
+    </span>
+  );
+}
 
 type DeviceGesture = {
   mode: DeviceGestureMode;
@@ -310,16 +380,20 @@ export default function Page() {
       ? getSolidGradientColor(gradientConfig).toUpperCase()
       : `${gradientType === "linear" ? `${gradientAngle}도` : "방사형"} · ${gradientConfig.stops.length}스탑`;
   const isIntakePhase = uploadedCount === 0;
-  const topbarStatusItems = isIntakePhase
-    ? [releaseStatusLabel, selectedTargetSummary, `${uploadedCount}/${TOTAL_SLOTS} 이미지`]
+  const topbarStatusItems: Array<{ icon: IconName; label: string }> = isIntakePhase
+    ? [
+        { icon: releaseReady ? "check" : "image", label: releaseStatusLabel },
+        { icon: "target", label: selectedTargetSummary },
+        { icon: "image", label: `${uploadedCount}/${TOTAL_SLOTS} 이미지` },
+      ]
     : [
-        releaseStatusLabel,
-        selectedTargetSummary,
-        `${uploadedCount}/${TOTAL_SLOTS} 이미지`,
-        `${exportFileCount}개 파일 생성`,
-        `${String(selected + 1).padStart(2, "0")}번 선택`,
-        `${selectedStoreSummary} ZIP`,
-        ...(hiddenCopyCount ? [`${hiddenCopyCount}개 화면 숨김 설정`] : []),
+        { icon: releaseReady ? "check" : "shield", label: releaseStatusLabel },
+        { icon: "target", label: selectedTargetSummary },
+        { icon: "image", label: `${uploadedCount}/${TOTAL_SLOTS} 이미지` },
+        { icon: "file", label: `${exportFileCount}개 파일` },
+        { icon: "board", label: `${String(selected + 1).padStart(2, "0")}번 선택` },
+        { icon: "zip", label: `${selectedStoreSummary} ZIP` },
+        ...(hiddenCopyCount ? [{ icon: "eye" as IconName, label: `${hiddenCopyCount}개 숨김` }] : []),
       ];
 
   const stageStyle = useMemo<CSSVars>(
@@ -359,7 +433,7 @@ export default function Page() {
 
     setSlots((current) => applyLoadedImagesToSlots(current, startIndex, loaded));
     setSelected(Math.min(startIndex + loaded.length - 1, TOTAL_SLOTS - 1));
-    notify(`${formatPageRange(startIndex, loaded.length)} 화면에 이미지 ${loaded.length}개를 추가했습니다.`);
+    notify(`${formatPageRange(startIndex, loaded.length)} · ${loaded.length}개 추가`);
   }
 
   function notify(message: string) {
@@ -371,13 +445,13 @@ export default function Page() {
     const snapshot =
       direction === "redo" ? redoHistorySnapshot(history.current) : undoHistorySnapshot(history.current);
     if (!snapshot) {
-      notify(direction === "redo" ? "다시 실행할 작업이 없습니다." : "되돌릴 작업이 없습니다.");
+      notify(direction === "redo" ? "다시 실행 없음." : "되돌릴 작업 없음.");
       return false;
     }
 
     const draft = parseDraftSnapshot(snapshot);
     if (!draft) {
-      notify("작업 이력을 불러오지 못했습니다.");
+      notify("작업 이력 오류.");
       return false;
     }
 
@@ -415,7 +489,7 @@ export default function Page() {
   function changePlatform(key: PlatformKey) {
     setPlatformKey(key);
     setSelectedTargetIds(getDefaultStoreTargetIds(key));
-    setStatus(`${platformDefs[key].label} 기본 Phone 규격으로 전환했습니다.`);
+    setStatus(`${platformDefs[key].label} Phone 규격`);
   }
 
   function toggleStoreTarget(targetId: StoreTargetId) {
@@ -429,7 +503,7 @@ export default function Page() {
   function goToSlot(index: number) {
     const nextIndex = Math.min(Math.max(index, 0), TOTAL_SLOTS - 1);
     selectSlot(nextIndex);
-    setStatus(`${String(nextIndex + 1).padStart(2, "0")}번 화면을 선택했습니다.`);
+    setStatus(`${String(nextIndex + 1).padStart(2, "0")}번 선택`);
   }
 
   function moveSelectedSlot(direction: -1 | 1) {
@@ -440,7 +514,7 @@ export default function Page() {
   function jumpToIssue(issue: SlotIssue) {
     selectSlot(issue.index);
     setInspectorMode(issue.mode);
-    setStatus(`${String(issue.index + 1).padStart(2, "0")}번 ${issue.label} 항목을 점검합니다.`);
+    setStatus(`${String(issue.index + 1).padStart(2, "0")}번 ${issue.label} 점검`);
   }
 
   function selectSlot(index: number) {
@@ -467,12 +541,12 @@ export default function Page() {
   function applyTemplateToAll(templateId: TemplateId) {
     const template = getTemplateById(templateId);
     setSlots((current) => current.map((slot) => ({ ...slot, templateId, badge: template.badge })));
-    setStatus("선택한 템플릿을 모든 화면에 적용했습니다.");
+    setStatus("템플릿 전체 적용.");
   }
 
   function setAllTextVisibility(key: TextVisibilityKey, visible: boolean) {
     setSlots((current) => current.map((slot) => ({ ...slot, [key]: visible })));
-    setStatus(`${getVisibilityLabel(key)} 표시를 모든 화면에서 ${visible ? "켰습니다" : "껐습니다"}.`);
+    setStatus(`${getVisibilityLabel(key)} ${visible ? "켜짐" : "꺼짐"}.`);
   }
 
   function isEveryTextHidden(key: TextVisibilityKey) {
@@ -481,7 +555,7 @@ export default function Page() {
 
   function resetSelectedDeviceTransform() {
     updateSelectedSlot({ deviceTransform: DEFAULT_DEVICE_TRANSFORM });
-    notify("선택한 화면의 목업 위치를 초기화했습니다.");
+    notify("목업 위치 초기화.");
   }
 
   function updateSelectedDeviceTransform(update: Partial<DeviceTransform>) {
@@ -565,14 +639,14 @@ export default function Page() {
         deviceTransform: DEFAULT_DEVICE_TRANSFORM,
       })),
     );
-    notify("기본 한글 문구와 템플릿 배치를 다시 적용했습니다.");
+    notify("기본값 복원.");
   }
 
   async function exportZip() {
     if (!releaseReady) {
       if (firstBlockingIssue) {
         jumpToIssue(firstBlockingIssue);
-        notify(`${String(firstBlockingIssue.index + 1).padStart(2, "0")}번 화면을 먼저 점검하세요. ${releaseStatusLabel}`);
+        notify(`${String(firstBlockingIssue.index + 1).padStart(2, "0")}번 먼저 점검. ${releaseStatusLabel}`);
       } else {
         setInspectorMode("export");
         notify(releaseStatusLabel);
@@ -581,7 +655,7 @@ export default function Page() {
     }
 
     try {
-      setStatus("미리보기 이미지를 렌더링하는 중입니다...");
+      setStatus("렌더링 중...");
       const files: ZipFile[] = [];
       const targets = getExportTargets({
         targetSpecs: selectedTargetSpecs,
@@ -590,7 +664,7 @@ export default function Page() {
       });
       for (let index = 0; index < targets.length; index += 1) {
         const target = targets[index];
-        setStatus(`${index + 1}/${targets.length}번째 이미지를 렌더링하는 중입니다...`);
+        setStatus(`${index + 1}/${targets.length} 렌더링`);
         const slot = slots[target.slotIndex];
         const blob = await renderSlotToBlob({
           slot,
@@ -609,7 +683,7 @@ export default function Page() {
         });
       }
 
-      setStatus("ZIP 파일을 만드는 중입니다...");
+      setStatus("ZIP 생성 중...");
       const zip = buildZip(files);
       const zipBlob = new Blob([zip], { type: "application/zip" });
       const url = URL.createObjectURL(zipBlob);
@@ -620,10 +694,10 @@ export default function Page() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      notify(`${files.length}개 파일을 ZIP으로 내보냈습니다.`);
+      notify(`${files.length}개 ZIP 완료.`);
     } catch (error) {
       console.error(error);
-      notify("내보내기에 실패했습니다. 콘솔 로그를 확인하세요.");
+      notify("내보내기 실패. 콘솔 확인.");
     }
   }
 
@@ -684,7 +758,7 @@ export default function Page() {
       totalPages: TOTAL_SLOTS,
     });
     const copied = await copyText(prompt);
-    notify(copied ? "선택한 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
+    notify(copied ? "선택 프롬프트 복사." : "프롬프트 복사 실패.");
   }
 
   async function copyAllPrompts() {
@@ -694,7 +768,7 @@ export default function Page() {
       platform,
     });
     const copied = await copyText(prompt);
-    notify(copied ? "01~10 전체 화면의 AI 프롬프트를 복사했습니다." : "프롬프트 복사에 실패했습니다.");
+    notify(copied ? "전체 프롬프트 복사." : "프롬프트 복사 실패.");
   }
 
   function applyPromptJsonText(text: string) {
@@ -708,7 +782,7 @@ export default function Page() {
 
     if (result.type === "single") {
       updateSelectedSlot(createPromptTextUpdate(result));
-      notify("붙여넣은 JSON을 선택한 화면에 적용했습니다.");
+      notify("JSON 적용.");
       return;
     }
 
@@ -931,12 +1005,16 @@ export default function Page() {
           <div className="brand-mark" aria-hidden="true" />
           <div>
             <h1>StoreShot</h1>
-            <p>스토어 미리보기 제작 도구</p>
+            <p>
+              <IconText icon="store">스토어 미리보기 제작</IconText>
+            </p>
           </div>
         </div>
 
         <section className="panel-section">
-              <div className="section-label">제출 플랫폼</div>
+              <div className="section-label">
+                <IconText icon="store">제출 플랫폼</IconText>
+              </div>
               <div className="segmented" role="group" aria-label="제출 플랫폼">
                 {(["ios", "android"] as PlatformKey[]).map((key) => (
                   <button
@@ -945,12 +1023,14 @@ export default function Page() {
                     type="button"
                     onClick={() => changePlatform(key)}
                   >
-                    {platformDefs[key].label}
+                    <IconText icon={key === "ios" ? "phone" : "store"}>{platformDefs[key].label}</IconText>
                   </button>
                 ))}
               </div>
               <div className="target-summary" aria-label="현재 내보내기 규격">
-                <span>기본 규격</span>
+                <span>
+                  <IconText icon="target">기본 규격</IconText>
+                </span>
                 <div>
                   <strong>{platform.label}</strong>
                   <small>
@@ -961,7 +1041,10 @@ export default function Page() {
               </div>
               <details className="advanced-panel target-panel">
                 <summary>
-                  <span>추가 규격</span>
+                  <span>
+                    <Icon name="layers" />
+                    추가 규격
+                  </span>
                   <strong>{selectedTargetSpecs.length}개 선택</strong>
                 </summary>
                 <div className="target-option-list">
@@ -976,7 +1059,9 @@ export default function Page() {
                           onChange={() => toggleStoreTarget(targetId)}
                         />
                         <span>
-                          <strong>{targetSpec.label}</strong>
+                          <strong>
+                            <IconText icon="target" className="pl-1">{targetSpec.label}</IconText>
+                          </strong>
                           <small>{targetSpec.requirement}</small>
                         </span>
                       </label>
@@ -984,35 +1069,49 @@ export default function Page() {
                   })}
                 </div>
               </details>
-              <p className="hint">기본값은 Phone 단일 ZIP입니다. Tablet, TV, Watch는 필요할 때만 선택하세요.</p>
+              <p className="hint">
+                <IconText icon="info">기본은 Phone ZIP.</IconText>
+              </p>
         </section>
 
         <section className="panel-section">
               <details className="advanced-panel">
                 <summary>
-                  <span>목업 표시</span>
+                  <span>
+                    <Icon name="camera" />
+                    목업 표시
+                  </span>
                   <strong>{hideDeviceCutout ? "카메라 숨김" : "기본"}</strong>
                 </summary>
                 <label className="toggle-row">
+                  <span>
+                    <IconText icon="eye" className="pl-1">카메라/아일랜드</IconText>
+                  </span>
                   <input
                     type="checkbox"
                     checked={hideDeviceCutout}
                     onChange={(event) => setHideDeviceCutout(event.target.checked)}
                   />
-                  <span>카메라/아일랜드 숨김</span>
                 </label>
               </details>
-              <p className="hint">Phone 구성에서만 목업 장식을 조정합니다.</p>
+              <p className="hint">
+                <IconText icon="info">Phone 목업 장식.</IconText>
+              </p>
         </section>
 
         <section className="panel-section">
               <details className="advanced-panel template-panel">
                 <summary>
-                  <span>템플릿</span>
+                  <span>
+                    <Icon name="layout" />
+                    템플릿
+                  </span>
                   <strong>{selectedTemplate.label}</strong>
                 </summary>
                 <label className="field template-picker">
-                  <span>선택 화면 템플릿</span>
+                  <span>
+                    <IconText icon="layout" className="pl-1">선택 화면 템플릿</IconText>
+                  </span>
                   <select
                     value={selectedSlot.templateId}
                     onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
@@ -1036,16 +1135,21 @@ export default function Page() {
                   <em>{selectedTemplate.badge}</em>
                 </div>
                 <button className="secondary-action compact-full" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
-                  현재 템플릿 전체 적용
+                  <IconText icon="layers">전체 적용</IconText>
                 </button>
               </details>
-              <p className="hint">세부 레이아웃 편집은 오른쪽 인스펙터에서 계속 사용할 수 있습니다.</p>
+              <p className="hint">
+                <IconText icon="info">세부 편집은 오른쪽에서.</IconText>
+              </p>
         </section>
 
         <section className="panel-section">
               <details className="advanced-panel background-panel">
                 <summary>
-                  <span>스크린샷 배경</span>
+                  <span>
+                    <Icon name="palette" />
+                    스크린샷 배경
+                  </span>
                   <strong>{theme.label} · {bgMode === "tonal" ? "톤 분할" : "단색"}</strong>
                 </summary>
                 <div className="background-panel-body">
@@ -1057,7 +1161,9 @@ export default function Page() {
                         type="button"
                         onClick={() => setBgMode(mode)}
                       >
-                        {mode === "tonal" ? "톤 분할" : "단색"}
+                        <IconText icon={mode === "tonal" ? "palette" : "brush"}>
+                          {mode === "tonal" ? "톤 분할" : "단색"}
+                        </IconText>
                       </button>
                     ))}
                   </div>
@@ -1076,13 +1182,18 @@ export default function Page() {
                   </div>
                   <details className="subtle-disclosure">
                     <summary>
-                      <span>고급 배경 설정</span>
+                      <span>
+                        <Icon name="sliders" />
+                        고급 배경
+                      </span>
                       <strong>{backgroundSummary}</strong>
                     </summary>
                     {bgMode === "tonal" ? (
                       <div className="gradient-editor">
                         <label className="field">
-                          <span>그라데이션 종류</span>
+                          <span>
+                            <IconText icon="palette" className="pl-1">그라데이션 종류</IconText>
+                          </span>
                           <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
                             <option value="linear">선형</option>
                             <option value="radial">방사형</option>
@@ -1090,7 +1201,9 @@ export default function Page() {
                         </label>
                         {gradientType === "linear" ? (
                           <label className="field">
-                            <span>각도</span>
+                            <span>
+                              <IconText icon="rotate" className="pl-1">각도</IconText>
+                            </span>
                             <input
                               type="range"
                               min={0}
@@ -1101,14 +1214,16 @@ export default function Page() {
                           </label>
                         ) : null}
                         <div className="gradient-heading">
-                          <span>컬러 스탑</span>
+                          <span>
+                            <IconText icon="palette" className="pl-1">컬러 스탑</IconText>
+                          </span>
                           <button
                             className="text-action"
                             type="button"
                             onClick={addGradientStop}
                             disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
                           >
-                            스탑 추가
+                            <IconText icon="layers">스탑 추가</IconText>
                           </button>
                         </div>
                         <div className="gradient-stop-list">
@@ -1150,7 +1265,7 @@ export default function Page() {
                                 onClick={() => removeGradientStop(stop.id)}
                                 disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
                               >
-                                삭제
+                                <IconText icon="reset">삭제</IconText>
                               </button>
                             </div>
                           ))}
@@ -1158,7 +1273,9 @@ export default function Page() {
                       </div>
                     ) : (
                       <label className="field color-field">
-                        <span>단색 컬러</span>
+                        <span>
+                          <IconText icon="brush" className="pl-1">단색 컬러</IconText>
+                        </span>
                         <input
                           type="color"
                           value={getSolidGradientColor(gradientConfig)}
@@ -1177,16 +1294,20 @@ export default function Page() {
                   </details>
                 </div>
               </details>
-              <p className="hint">컬러와 세부 배경은 필요할 때만 열어 조정합니다.</p>
+              <p className="hint">
+                <IconText icon="info">필요할 때만 조정.</IconText>
+              </p>
         </section>
         <section className="skill-download" aria-label="앱 출시 준비 스킬 다운로드">
           <div>
-            <span>Codex / Claude Skill</span>
+            <span>
+              <IconText icon="sparkles">Codex / Claude Skill</IconText>
+            </span>
             <strong>app-prestore-checks</strong>
-            <p>스토어 문구, 개인정보, QA, 심사 리스크, 출시 자료를 앱 프로젝트 안에서 점검합니다.</p>
+            <p>출시 전 점검 스킬.</p>
           </div>
           <a className="skill-download-link" href="/downloads/app-prestore-checks.skill" download>
-            스킬 다운로드
+            <IconText icon="download">스킬 다운로드</IconText>
           </a>
         </section>
       </aside>
@@ -1194,19 +1315,21 @@ export default function Page() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-title">
-            <p className="eyebrow">릴리즈 보드</p>
+            <p className="eyebrow">
+              <IconText icon="board">릴리즈 보드</IconText>
+            </p>
             <h2>
               {isIntakePhase
-                ? "이미지부터 추가하세요. 다음 작업은 준비되는 순서대로 열립니다."
-                : "10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다."}
+                ? "이미지를 추가하세요."
+                : "10개 화면을 검수하고 내보냅니다."}
             </h2>
             <div className="status-strip" aria-label="작업 상태">
               {topbarStatusItems.map((item, index) => (
                 <span
-                  key={`${index}-${item}`}
+                  key={`${index}-${item.label}`}
                   className={index === 0 ? (releaseReady ? "is-ready" : "needs-work") : undefined}
                 >
-                  {item}
+                  <IconText icon={item.icon}>{item.label}</IconText>
                 </span>
               ))}
             </div>
@@ -1226,14 +1349,16 @@ export default function Page() {
               </div>
             ) : null}
             <p className="activity-line">
-              <span>작업 안내</span>
+              <span>
+                <IconText icon="info">안내</IconText>
+              </span>
               {status}
             </p>
           </div>
           <div className="topbar-actions">
             <div className="action-cluster">
               <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
-                이미지 일괄 추가
+                <IconText icon="upload">이미지 일괄 추가</IconText>
               </label>
               <input
                 id="bulk-input"
@@ -1245,10 +1370,12 @@ export default function Page() {
               />
             </div>
             <details className="topbar-more">
-              <summary>작업</summary>
+              <summary>
+                <IconText icon="sliders">작업</IconText>
+              </summary>
               <div className="topbar-more-menu" aria-label="보조 작업">
                 <button className="secondary-action" type="button" title="Command+Z" onClick={() => applyHistoryStep("undo")}>
-                  되돌리기
+                  <IconText icon="undo">되돌리기</IconText>
                 </button>
                 <button
                   className="secondary-action"
@@ -1256,17 +1383,19 @@ export default function Page() {
                   title="Command+Shift+Z"
                   onClick={() => applyHistoryStep("redo")}
                 >
-                  다시 실행
+                  <IconText icon="reset">다시 실행</IconText>
                 </button>
                 <button className="secondary-action" type="button" onClick={resetCopy}>
-                  기본값 복원
+                  <IconText icon="reset">기본값 복원</IconText>
                 </button>
               </div>
             </details>
             {!isIntakePhase ? (
               <div className="export-controls">
                 <label className="topbar-format">
-                  <span>이미지 형식</span>
+                  <span>
+                    <IconText icon="file" className="pl-1">이미지 형식</IconText>
+                  </span>
                   <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
                     <option value="png">PNG</option>
                     <option value="jpg">JPG</option>
@@ -1274,7 +1403,9 @@ export default function Page() {
                 </label>
                 {exportFormat === "jpg" ? (
                   <label className="topbar-quality">
-                    <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
+                    <span>
+                      <IconText icon="percent" className="pl-1">JPG {Math.round(jpgQuality * 100)}%</IconText>
+                    </span>
                     <input
                       type="range"
                       min={72}
@@ -1291,16 +1422,16 @@ export default function Page() {
                     aria-label={
                       releaseReady
                         ? "ZIP 내보내기"
-                        : `검수 후 내보내기. ${releaseStatusLabel}. 첫 점검 항목으로 이동합니다.`
+                        : `검수 후 내보내기: ${releaseStatusLabel}`
                     }
                     title={
                       releaseReady
-                        ? "스토어 제출용 ZIP 파일을 생성합니다."
-                        : `${releaseStatusLabel} · 클릭하면 첫 점검 항목으로 이동합니다.`
+                        ? "ZIP 생성"
+                        : `${releaseStatusLabel} · 첫 항목 이동`
                     }
                     onClick={exportZip}
                   >
-                    {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+                    <IconText icon="zip">{releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}</IconText>
                   </button>
                   {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
                 </div>
@@ -1320,7 +1451,9 @@ export default function Page() {
           {!isIntakePhase ? (
             <div className="stage-workbar" aria-label="릴리즈 보드 상태">
               <div className="stage-workbar-title">
-                <span>릴리즈 보드</span>
+                <span>
+                  <IconText icon="board">릴리즈 보드</IconText>
+                </span>
                 <strong>
                   {String(selected + 1).padStart(2, "0")}번 · {selectedTemplate.label}
                 </strong>
@@ -1331,7 +1464,7 @@ export default function Page() {
               </div>
               <div className="stage-workbar-actions" aria-label="보드 이동">
                 <button type="button" onClick={() => moveSelectedSlot(-1)}>
-                  이전
+                  <IconText icon="arrowLeft">이전</IconText>
                 </button>
                 <button
                   type="button"
@@ -1342,14 +1475,16 @@ export default function Page() {
                     }
                   }}
                 >
-                  {selectedIssue ? "현재 점검" : "다음 점검"}
+                  <IconText icon="target">{selectedIssue ? "현재 점검" : "다음 점검"}</IconText>
                 </button>
                 <button type="button" onClick={() => moveSelectedSlot(1)}>
-                  다음
+                  <IconText icon="arrowRight">다음</IconText>
                 </button>
               </div>
               <div className="stage-screen-map" aria-label="전체 화면 준비 상태">
-                <span>화면 상태</span>
+                <span>
+                  <IconText icon="queue">화면 상태</IconText>
+                </span>
                 <div>
                   {slotReadiness.map((readiness, index) => {
                     const pageState = readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기";
@@ -1375,8 +1510,10 @@ export default function Page() {
           ) : null}
           {!uploadedCount ? (
             <div className="stage-intake" aria-label="시작 안내">
-              <strong>이미지 10장을 보드에 드롭하세요</strong>
-              <span>PNG/JPG 여러 장을 놓으면 01번부터 순서대로 채워집니다. 개별 카드는 해당 위치부터 이어서 배치됩니다.</span>
+              <strong>
+                <IconText icon="image">이미지 10장 드롭</IconText>
+              </strong>
+              <span>PNG/JPG를 순서대로 채웁니다.</span>
             </div>
           ) : null}
           <div className={`stage platform-${platformKey}`} style={stageStyle}>
@@ -1399,7 +1536,7 @@ export default function Page() {
                 >
                   <div className="shot-toolbar">
                     <button className="slot-button" type="button" onClick={() => selectSlot(index)}>
-                      {String(index + 1).padStart(2, "0")}번 · {template.label}
+                      <IconText icon="image">{String(index + 1).padStart(2, "0")}번 · {template.label}</IconText>
                     </button>
                   </div>
                   <div
@@ -1449,28 +1586,28 @@ export default function Page() {
                             onPointerDown={(event) => event.stopPropagation()}
                           >
                             <label>
+                              <span><IconText icon="badge" className="pl-1">뱃지</IconText></span>
                               <input
                                 type="checkbox"
                                 checked={slot.showBadge}
                                 onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
                               />
-                              <span>뱃지</span>
                             </label>
                             <label>
+                              <span><IconText icon="title" className="pl-1">제목</IconText></span>
                               <input
                                 type="checkbox"
                                 checked={slot.showTitle}
                                 onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
                               />
-                              <span>제목</span>
                             </label>
                             <label>
+                              <span><IconText icon="text" className="pl-1">설명</IconText></span>
                               <input
                                 type="checkbox"
                                 checked={slot.showSubtitle}
                                 onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
                               />
-                              <span>설명</span>
                             </label>
                           </div>
                         ) : null}
@@ -1539,38 +1676,46 @@ export default function Page() {
             <div className="inspector-sticky intake-sticky">
               <div className="inspector-header">
                 <div>
-                  <p className="eyebrow">지금 작업</p>
+                  <p className="eyebrow">
+                    <IconText icon="image">지금 작업</IconText>
+                  </p>
                   <h2>이미지 추가</h2>
                 </div>
                 <span className="inspector-badge">{uploadedCount}/{TOTAL_SLOTS}</span>
               </div>
-              <p className="intake-guidance">업로드 전에는 편집 도구를 접어 두고, 필요한 기본 설정만 유지합니다.</p>
+              <p className="intake-guidance">
+                <IconText icon="info">업로드 전 기본 설정만 표시.</IconText>
+              </p>
             </div>
 
             <section className="workflow-panel intake-workflow" aria-label="이미지 추가">
               <div className="workflow-head">
                 <div>
-                  <p className="eyebrow">첫 단계</p>
-                  <strong>PNG/JPG 이미지를 추가하세요</strong>
+                  <p className="eyebrow">
+                    <IconText icon="upload">첫 단계</IconText>
+                  </p>
+                  <strong>
+                    <IconText icon="image">PNG/JPG 추가</IconText>
+                  </strong>
                 </div>
                 <span>{missingImageCount}개 필요</span>
               </div>
               <div className="intake-step-list" aria-label="진행 순서">
                 <div className="intake-step is-current">
-                  <span>1</span>
+                  <span><Icon name="upload" /></span>
                   <strong>이미지 추가</strong>
                 </div>
                 <div className="intake-step">
-                  <span>2</span>
+                  <span><Icon name="text" /></span>
                   <strong>카피/레이아웃 검수</strong>
                 </div>
                 <div className="intake-step">
-                  <span>3</span>
+                  <span><Icon name="zip" /></span>
                   <strong>ZIP 내보내기</strong>
                 </div>
               </div>
               <label className="workflow-next" htmlFor="selected-slot-input">
-                선택 위치부터 이미지 추가
+                <IconText icon="upload">선택 위치부터 추가</IconText>
               </label>
               <input
                 id="selected-slot-input"
@@ -1583,12 +1728,14 @@ export default function Page() {
             </section>
 
             <details className="inspector-disclosure">
-              <summary>이미지 추가 후 열리는 작업</summary>
+              <summary>
+                <IconText icon="queue">다음 작업</IconText>
+              </summary>
               <div className="disclosure-list">
-                <span>페이지별 문구 편집</span>
-                <span>템플릿과 목업 위치 조정</span>
-                <span>누락 화면 검수와 ZIP 생성</span>
-                <span>AI 프롬프트/JSON 반영</span>
+                <span><IconText icon="text">문구 편집</IconText></span>
+                <span><IconText icon="layout">목업 조정</IconText></span>
+                <span><IconText icon="zip">ZIP 생성</IconText></span>
+                <span><IconText icon="json">JSON 반영</IconText></span>
               </div>
             </details>
           </>
@@ -1597,7 +1744,9 @@ export default function Page() {
         <div className="inspector-sticky">
           <div className="inspector-header">
             <div>
-              <p className="eyebrow">선택 화면</p>
+              <p className="eyebrow">
+                <IconText icon="target">선택 화면</IconText>
+              </p>
               <h2>{String(selected + 1).padStart(2, "0")}번 페이지</h2>
             </div>
             <span className="inspector-badge">{selectedTemplate.label}</span>
@@ -1632,18 +1781,26 @@ export default function Page() {
                 className={inspectorMode === mode.id ? "is-active" : ""}
                 onClick={() => setInspectorMode(mode.id)}
               >
-                <span>{mode.label}</span>
+                <span>
+                  <IconText icon={mode.id === "copy" ? "text" : mode.id === "layout" ? "layout" : mode.id === "export" ? "shield" : "ai"}>
+                    {mode.label}
+                  </IconText>
+                </span>
                 <small>{mode.description}</small>
               </button>
             ))}
           </div>
-          <p className="shortcut-hint">←/→ 화면 이동 · Home/End 처음/마지막</p>
+          <p className="shortcut-hint">
+            <IconText icon="keyboard">←/→ 이동 · Home/End</IconText>
+          </p>
         </div>
 
         <section className="workflow-panel" aria-label="작업 큐">
           <div className="workflow-head">
             <div>
-              <p className="eyebrow">작업 큐</p>
+              <p className="eyebrow">
+                <IconText icon="queue">작업 큐</IconText>
+              </p>
               <strong>{readySlotCount}/{TOTAL_SLOTS} 화면 준비</strong>
             </div>
             <span>{completionPercent}%</span>
@@ -1660,23 +1817,23 @@ export default function Page() {
           </div>
           <div className="workflow-checklist">
             <div className={selectedReadiness.hasImage ? "workflow-check is-ok" : "workflow-check needs-work"}>
-              <span>현재 이미지</span>
+              <span><IconText icon="image">현재 이미지</IconText></span>
               <strong>{selectedReadiness.hasImage ? selectedSlot.imageName || "입력됨" : "필요"}</strong>
             </div>
             <div className={selectedReadiness.copyIssues.length ? "workflow-check needs-work" : "workflow-check is-ok"}>
-              <span>현재 카피</span>
+              <span><IconText icon="text">현재 카피</IconText></span>
               <strong>
                 {selectedReadiness.copyIssues.length ? `${selectedReadiness.copyIssues.join(", ")} 입력 필요` : "정상"}
               </strong>
             </div>
             <div className="workflow-check">
-              <span>숨긴 레이어</span>
+              <span><IconText icon="layers">숨긴 레이어</IconText></span>
               <strong>{selectedReadiness.hiddenLayers ? `${selectedReadiness.hiddenLayers}개` : "없음"}</strong>
             </div>
           </div>
           {visibleIssues.length ? (
             <div className="issue-queue" aria-label="다음 점검 화면">
-              <span>선택 기준 다음 점검</span>
+              <span><IconText icon="target">다음 점검</IconText></span>
               <div>
                 {visibleIssues.map((issue) => (
                   <button
@@ -1696,7 +1853,7 @@ export default function Page() {
             {selectedNeedsImage ? (
               <>
                 <label className="workflow-next" htmlFor="selected-slot-input">
-                  선택 화면 이미지 추가
+                  <IconText icon="upload">선택 화면 추가</IconText>
                 </label>
                 <input
                   id="selected-slot-input"
@@ -1722,11 +1879,13 @@ export default function Page() {
                   }
                 }}
               >
-                {selectedNeedsCopy
-                  ? "카피 입력하기"
-                  : nextIssueIndex < 0
-                    ? "모든 화면 준비됨"
-                    : `${String(nextIssueIndex + 1).padStart(2, "0")}번 점검하기`}
+                <IconText icon={selectedNeedsCopy ? "text" : nextIssueIndex < 0 ? "check" : "target"}>
+                  {selectedNeedsCopy
+                    ? "카피 입력"
+                    : nextIssueIndex < 0
+                      ? "준비 완료"
+                      : `${String(nextIssueIndex + 1).padStart(2, "0")}번 점검`}
+                </IconText>
               </button>
             )}
           </div>
@@ -1735,13 +1894,17 @@ export default function Page() {
         <section className="inspector-section" hidden={inspectorMode !== "copy"}>
           <div className="section-row">
             <div>
-              <div className="section-label">카피 편집</div>
-              <p className="hint">선택한 페이지의 뱃지, 제목, 설명과 표시 여부를 조정합니다.</p>
+              <div className="section-label">
+                <IconText icon="text">카피 편집</IconText>
+              </div>
+              <p className="hint">
+                <IconText icon="info">문구와 표시 상태.</IconText>
+              </p>
             </div>
           </div>
           <label className="field">
             <span className="field-label-row">
-              <span>뱃지</span>
+              <span><IconText icon="badge" className="pl-1">뱃지</IconText></span>
               <small className={selectedSlot.badge.length >= BADGE_MAX_LENGTH ? "is-full" : ""}>
                 {selectedSlot.badge.length}/{BADGE_MAX_LENGTH}
               </small>
@@ -1754,7 +1917,7 @@ export default function Page() {
           </label>
           <label className="field">
             <span className="field-label-row">
-              <span>제목</span>
+              <span><IconText icon="title" className="pl-1">제목</IconText></span>
               <small className={selectedSlot.title.length >= TITLE_MAX_LENGTH ? "is-full" : ""}>
                 {selectedSlot.title.length}/{TITLE_MAX_LENGTH}
               </small>
@@ -1768,7 +1931,7 @@ export default function Page() {
           </label>
           <label className="field">
             <span className="field-label-row">
-              <span>설명</span>
+              <span><IconText icon="text" className="pl-1">설명</IconText></span>
               <small className={selectedSlot.subtitle.length >= SUBTITLE_MAX_LENGTH ? "is-full" : ""}>
                 {selectedSlot.subtitle.length}/{SUBTITLE_MAX_LENGTH}
               </small>
@@ -1782,28 +1945,28 @@ export default function Page() {
           </label>
           <div className="visibility-toggle-panel" aria-label="선택한 화면 텍스트 표시">
             <label className="toggle-row compact">
+              <span><IconText icon="badge" className="pl-1">뱃지</IconText></span>
               <input
                 type="checkbox"
                 checked={selectedSlot.showBadge}
                 onChange={(event) => updateSelectedSlot({ showBadge: event.target.checked })}
               />
-              <span>뱃지</span>
             </label>
             <label className="toggle-row compact">
+              <span><IconText icon="title" className="pl-1">제목</IconText></span>
               <input
                 type="checkbox"
                 checked={selectedSlot.showTitle}
                 onChange={(event) => updateSelectedSlot({ showTitle: event.target.checked })}
               />
-              <span>제목</span>
             </label>
             <label className="toggle-row compact">
+              <span><IconText icon="text" className="pl-1">설명</IconText></span>
               <input
                 type="checkbox"
                 checked={selectedSlot.showSubtitle}
                 onChange={(event) => updateSelectedSlot({ showSubtitle: event.target.checked })}
               />
-              <span>설명</span>
             </label>
           </div>
         </section>
@@ -1811,34 +1974,38 @@ export default function Page() {
         <section className="inspector-section" hidden={inspectorMode !== "copy"}>
           <div className="section-row">
             <div>
-              <div className="section-label">전체 표시 제어</div>
-              <p className="hint">10개 화면의 텍스트 레이어를 한 번에 켜거나 끕니다.</p>
+              <div className="section-label">
+                <IconText icon="eye">전체 표시</IconText>
+              </div>
+              <p className="hint">
+                <IconText icon="info">텍스트 레이어 일괄 제어.</IconText>
+              </p>
             </div>
           </div>
           <div className="global-hide-controls" aria-label="전체 텍스트 숨김">
             <label>
+              <span><IconText icon="badge" className="pl-1">뱃지 끄기</IconText></span>
               <input
                 type="checkbox"
                 checked={isEveryTextHidden("showBadge")}
                 onChange={(event) => setAllTextVisibility("showBadge", !event.target.checked)}
               />
-              <span>뱃지 모두 끄기</span>
             </label>
             <label>
+              <span><IconText icon="title" className="pl-1">제목 끄기</IconText></span>
               <input
                 type="checkbox"
                 checked={isEveryTextHidden("showTitle")}
                 onChange={(event) => setAllTextVisibility("showTitle", !event.target.checked)}
               />
-              <span>제목 모두 끄기</span>
             </label>
             <label>
+              <span><IconText icon="text" className="pl-1">설명 끄기</IconText></span>
               <input
                 type="checkbox"
                 checked={isEveryTextHidden("showSubtitle")}
                 onChange={(event) => setAllTextVisibility("showSubtitle", !event.target.checked)}
               />
-              <span>설명 모두 끄기</span>
             </label>
           </div>
         </section>
@@ -1846,40 +2013,44 @@ export default function Page() {
         <section className="inspector-section" hidden={inspectorMode !== "export"}>
           <div className="section-row">
             <div>
-              <div className="section-label">내보내기 검수</div>
-              <p className="hint">ZIP 생성 전에 누락된 화면과 산출물 구성을 확인합니다.</p>
+              <div className="section-label">
+                <IconText icon="shield">내보내기 검수</IconText>
+              </div>
+              <p className="hint">
+                <IconText icon="info">누락과 산출물 확인.</IconText>
+              </p>
             </div>
           </div>
           <div className="quality-gate" aria-label="출시 게이트">
             <div className={`quality-gate-card ${missingImageCount ? "is-blocked" : "is-ok"}`}>
               <div>
-                <span>이미지</span>
+                <span><IconText icon="image">이미지</IconText></span>
                 <strong>{missingImageCount ? `${missingImageCount}개 화면 필요` : "10개 모두 입력"}</strong>
               </div>
               {firstMissingImageIssue ? (
                 <button type="button" onClick={() => jumpToIssue(firstMissingImageIssue)}>
-                  {String(firstMissingImageIssue.index + 1).padStart(2, "0")}번으로 이동
+                  <IconText icon="arrowRight">{String(firstMissingImageIssue.index + 1).padStart(2, "0")}번 이동</IconText>
                 </button>
               ) : (
-                <small>정상</small>
+                <small><IconText icon="check">정상</IconText></small>
               )}
             </div>
             <div className={`quality-gate-card ${copyIssueCount ? "is-blocked" : "is-ok"}`}>
               <div>
-                <span>카피</span>
-                <strong>{copyIssueCount ? `${copyIssueSlotCount}개 화면 · ${copyIssueCount}개 항목` : "보이는 문구 정상"}</strong>
+                <span><IconText icon="text">카피</IconText></span>
+                <strong>{copyIssueCount ? `${copyIssueSlotCount}개 화면 · ${copyIssueCount}개 항목` : "카피 정상"}</strong>
               </div>
               {firstCopyIssue ? (
                 <button type="button" onClick={() => jumpToIssue(firstCopyIssue)}>
-                  {String(firstCopyIssue.index + 1).padStart(2, "0")}번 카피
+                  <IconText icon="arrowRight">{String(firstCopyIssue.index + 1).padStart(2, "0")}번 카피</IconText>
                 </button>
               ) : (
-                <small>정상</small>
+                <small><IconText icon="check">정상</IconText></small>
               )}
             </div>
             <div className={`quality-gate-card ${hiddenCopyCount ? "is-warning" : "is-ok"}`}>
               <div>
-                <span>텍스트 숨김</span>
+                <span><IconText icon="eye">텍스트 숨김</IconText></span>
                 <strong>{hiddenCopyCount ? `${hiddenCopyCount}개 화면 숨김` : "숨김 없음"}</strong>
               </div>
               {firstHiddenLayerIndex >= 0 ? (
@@ -1890,42 +2061,42 @@ export default function Page() {
                     setInspectorMode("copy");
                   }}
                 >
-                  표시 설정
+                  <IconText icon="eye">표시 설정</IconText>
                 </button>
               ) : (
-                <small>정상</small>
+                <small><IconText icon="check">정상</IconText></small>
               )}
             </div>
             <div className="quality-gate-card is-ok">
               <div>
-                <span>ZIP 산출물</span>
+                <span><IconText icon="zip">ZIP 산출물</IconText></span>
                 <strong>
                   {exportFileCount}개 {exportFormat.toUpperCase()}
                 </strong>
               </div>
-              <small>{selectedTargetSummary}</small>
+              <small><IconText icon="target">{selectedTargetSummary}</IconText></small>
             </div>
           </div>
           <div className="readiness-panel" aria-label="내보내기 파일 구성">
             <div className="readiness-row">
-              <span>대상 스토어</span>
+              <span><IconText icon="store">대상 스토어</IconText></span>
               <strong>{selectedStoreSummary}</strong>
             </div>
             <div className="readiness-row">
-              <span>현재 미리보기</span>
+              <span><IconText icon="image">현재 미리보기</IconText></span>
               <strong>
                 {platform.width} x {platform.height}
               </strong>
             </div>
             <div className="readiness-row">
-              <span>파일 구성</span>
+              <span><IconText icon="file">파일 구성</IconText></span>
               <strong>
                 {exportFileCount}개 {exportFormat.toUpperCase()}
                 {exportFormat === "jpg" ? ` · ${Math.round(jpgQuality * 100)}%` : ""}
               </strong>
             </div>
             <div className="readiness-row">
-              <span>선택 규격</span>
+              <span><IconText icon="target">선택 규격</IconText></span>
               <strong>{selectedTargetSpecs.map((targetSpec) => targetSpec.label).join(" · ")}</strong>
             </div>
           </div>
@@ -1934,15 +2105,21 @@ export default function Page() {
         <section className="inspector-section" hidden={inspectorMode !== "layout"}>
           <div className="section-row">
             <div>
-              <div className="section-label">템플릿과 목업</div>
-              <p className="hint">선택한 페이지의 배치와 기기 목업 위치를 조정합니다.</p>
+              <div className="section-label">
+                <IconText icon="layout">템플릿과 목업</IconText>
+              </div>
+              <p className="hint">
+                <IconText icon="info">배치와 목업 위치.</IconText>
+              </p>
             </div>
             <button className="text-action" type="button" onClick={resetSelectedDeviceTransform}>
-              초기화
+              <IconText icon="reset">초기화</IconText>
             </button>
           </div>
           <label className="field">
-            <span>템플릿</span>
+            <span>
+              <IconText icon="layout" className="pl-1">템플릿</IconText>
+            </span>
             <select
               value={selectedSlot.templateId}
               onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
@@ -1954,9 +2131,13 @@ export default function Page() {
               ))}
             </select>
           </label>
-          <p className="inspector-note">Shift 드래그는 수평 또는 수직으로만 이동합니다.</p>
+          <p className="inspector-note">
+            <IconText icon="keyboard">Shift 드래그: 축 고정.</IconText>
+          </p>
           <label className="field">
-            <span>가로 위치 {selectedSlot.deviceTransform.x}%</span>
+            <span>
+              <IconText icon="move" className="pl-1">가로 {selectedSlot.deviceTransform.x}%</IconText>
+            </span>
             <input
               type="range"
               min={-50}
@@ -1966,7 +2147,9 @@ export default function Page() {
             />
           </label>
           <label className="field">
-            <span>세로 위치 {selectedSlot.deviceTransform.y}%</span>
+            <span>
+              <IconText icon="move" className="pl-1">세로 {selectedSlot.deviceTransform.y}%</IconText>
+            </span>
             <input
               type="range"
               min={-50}
@@ -1976,7 +2159,9 @@ export default function Page() {
             />
           </label>
           <label className="field">
-            <span>스케일 {selectedSlot.deviceTransform.scale.toFixed(2)}x</span>
+            <span>
+              <IconText icon="scale" className="pl-1">스케일 {selectedSlot.deviceTransform.scale.toFixed(2)}x</IconText>
+            </span>
             <input
               type="range"
               min={0.55}
@@ -1987,7 +2172,9 @@ export default function Page() {
             />
           </label>
           <label className="field">
-            <span>회전 {selectedSlot.deviceTransform.rotate}도</span>
+            <span>
+              <IconText icon="rotate" className="pl-1">회전 {selectedSlot.deviceTransform.rotate}도</IconText>
+            </span>
             <input
               type="range"
               min={-45}
@@ -2001,25 +2188,31 @@ export default function Page() {
         <section className="inspector-section" hidden={inspectorMode !== "ai"}>
           <div className="section-row">
             <div>
-              <div className="section-label">프롬프트와 JSON</div>
-              <p className="hint">AI가 반환한 JSON을 붙여넣으면 선택 화면 또는 전체 화면 카피에 바로 반영합니다.</p>
+              <div className="section-label">
+                <IconText icon="ai">프롬프트와 JSON</IconText>
+              </div>
+              <p className="hint">
+                <IconText icon="info">JSON 붙여넣기 후 적용.</IconText>
+              </p>
             </div>
           </div>
           <div className="prompt-workflow" aria-label="AI 카피 작업 순서">
-            <span>1. 복사</span>
-            <span>2. 생성</span>
-            <span>3. 적용</span>
+            <span><IconText icon="copy">복사</IconText></span>
+            <span><IconText icon="ai">생성</IconText></span>
+            <span><IconText icon="check">적용</IconText></span>
           </div>
           <div className="prompt-actions">
             <button className="secondary-action prompt-action" type="button" onClick={copySelectedPrompt}>
-              선택 화면 프롬프트 복사
+              <IconText icon="copy">선택 프롬프트</IconText>
             </button>
             <button className="secondary-action prompt-action" type="button" onClick={copyAllPrompts}>
-              01~10 전체 프롬프트 복사
+              <IconText icon="copy">전체 프롬프트</IconText>
             </button>
           </div>
           <details className="json-schema-note">
-            <summary>JSON 예시 보기</summary>
+            <summary>
+              <IconText icon="json">JSON 예시</IconText>
+            </summary>
             <pre>{`{
   "badge": "예약",
   "title": "가까운 매장을 바로 확인",
@@ -2030,7 +2223,9 @@ export default function Page() {
 }`}</pre>
           </details>
           <label className="field">
-            <span>프롬프트 결과 JSON</span>
+            <span>
+              <IconText icon="json" className="pl-1">프롬프트 JSON</IconText>
+            </span>
             <textarea
               className="json-paste-area"
               rows={5}
@@ -2042,11 +2237,11 @@ export default function Page() {
             />
           </label>
           <div className="json-status">
-            <span>입력 상태</span>
+            <span><IconText icon="info">입력 상태</IconText></span>
             <strong>{promptJsonInput.trim() ? "JSON 대기 중" : "붙여넣기 필요"}</strong>
           </div>
           <button className="secondary-action prompt-action" type="button" onClick={() => applyPromptJsonText(promptJsonInput)}>
-            JSON 적용
+            <IconText icon="check">JSON 적용</IconText>
           </button>
         </section>
           </>
