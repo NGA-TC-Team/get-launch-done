@@ -86,6 +86,8 @@ textarea:focus-visible,
 }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
   max-height: 100vh;
   overflow-y: auto;
   border-right: 1px solid var(--sidebar-line);
@@ -108,7 +110,7 @@ textarea:focus-visible,
   place-items: center;
   border: 1px solid #f7f7f7;
   border-radius: var(--radius);
-  background: #f7f7f7;
+  background: #f7f7f7 url("/favicon.ico") center / 28px 28px no-repeat;
   color: #111111;
   font-weight: 900;
 }
@@ -287,6 +289,59 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.skill-download {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+  padding: 18px 0 2px;
+  border-top: 1px solid var(--sidebar-line);
+}
+
+.skill-download span,
+.skill-download p {
+  color: var(--sidebar-muted);
+}
+
+.skill-download span {
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.skill-download strong {
+  display: block;
+  margin-top: 5px;
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.skill-download p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.skill-download-link {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f7f7f7;
+  border-radius: 8px;
+  background: #f7f7f7;
+  color: #111111;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.skill-download-link:hover {
+  background: #ffffff;
+}
+
 .template-mini {
   position: relative;
   display: block;
@@ -432,7 +487,7 @@ textarea:focus-visible,
   margin-top: 12px;
 }
 
-.advanced-panel summary {
+.advanced-panel > summary {
   display: flex;
   min-height: 42px;
   cursor: pointer;
@@ -446,11 +501,11 @@ textarea:focus-visible,
   list-style-position: inside;
 }
 
-.advanced-panel summary::marker {
+.advanced-panel > summary::marker {
   color: #c9c9c9;
 }
 
-.advanced-panel summary strong {
+.advanced-panel > summary strong {
   color: #bfc2c7;
   font-size: 11px;
   font-weight: 900;
@@ -461,9 +516,63 @@ textarea:focus-visible,
   padding-bottom: 10px;
 }
 
-.advanced-panel[open] summary {
+.advanced-panel[open] > summary {
   border-bottom: 1px solid #303034;
   margin-bottom: 2px;
+}
+
+.advanced-panel.background-panel[open] {
+  padding-bottom: 0;
+}
+
+.background-panel-body {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.background-panel-body .swatches {
+  margin: 0;
+}
+
+.subtle-disclosure {
+  overflow: hidden;
+  border: 1px solid #303034;
+  border-radius: 8px;
+  background: #101012;
+}
+
+.subtle-disclosure summary {
+  display: flex;
+  min-height: 38px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #f4f4f4;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  list-style-position: inside;
+}
+
+.subtle-disclosure summary strong {
+  color: #bfc2c7;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.subtle-disclosure[open] {
+  padding-bottom: 10px;
+}
+
+.subtle-disclosure[open] summary {
+  border-bottom: 1px solid #303034;
+}
+
+.subtle-disclosure .gradient-editor,
+.subtle-disclosure .color-field {
+  padding: 0 10px;
 }
 
 .advanced-panel .gradient-editor,
@@ -853,6 +962,48 @@ textarea:focus-visible,
   padding: 0 10px;
 }
 
+.topbar-more {
+  position: relative;
+}
+
+.topbar-more summary {
+  display: grid;
+  min-height: 38px;
+  min-width: 58px;
+  cursor: pointer;
+  place-items: center;
+  border: 1px solid #bfbfbf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111111;
+  padding: 0 12px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.topbar-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.topbar-more-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: 168px;
+  gap: 6px;
+  border: 1px solid #d2d4d7;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(17, 17, 17, 0.14);
+  padding: 8px;
+}
+
+.topbar-more-menu .secondary-action {
+  width: 100%;
+}
+
 .export-controls {
   border-left: 1px solid #d7d9dc;
   padding-left: 8px;
@@ -941,8 +1092,8 @@ textarea:focus-visible,
   padding: 22px 24px;
 }
 
-.stage-wrap.has-intake {
-  grid-template-rows: auto auto minmax(0, 1fr);
+.stage-wrap.is-intake {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .stage-wrap.is-stage-dragging::after {
@@ -1701,6 +1852,10 @@ textarea:focus-visible,
   padding: 18px 16px 12px;
 }
 
+.inspector-sticky.intake-sticky {
+  padding-bottom: 18px;
+}
+
 .inspector-header {
   display: flex;
   align-items: flex-start;
@@ -1713,6 +1868,14 @@ textarea:focus-visible,
   margin: 0;
   font-size: 18px;
   line-height: 1.2;
+}
+
+.intake-guidance {
+  margin: -8px 0 0;
+  color: #5d6268;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .page-navigator {
@@ -1844,6 +2007,89 @@ textarea:focus-visible,
   background: #ffffff;
   margin-bottom: 18px;
   padding: 12px;
+}
+
+.intake-workflow {
+  display: grid;
+  gap: 12px;
+}
+
+.intake-step-list {
+  display: grid;
+  gap: 6px;
+}
+
+.intake-step {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e0e2e5;
+  border-radius: 8px;
+  background: #fbfbfc;
+  color: #3e4248;
+  padding: 0 9px;
+}
+
+.intake-step.is-current {
+  border-color: #111111;
+  background: #f3f4f5;
+  color: #111111;
+}
+
+.intake-step span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.intake-step strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-disclosure {
+  overflow: hidden;
+  border: 1px solid #d1d3d6;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.inspector-disclosure summary {
+  min-height: 40px;
+  cursor: pointer;
+  color: #111111;
+  font-size: 12px;
+  font-weight: 900;
+  list-style-position: inside;
+  padding: 10px 12px;
+}
+
+.inspector-disclosure[open] summary {
+  border-bottom: 1px solid #e1e3e6;
+}
+
+.disclosure-list {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px 12px;
+}
+
+.disclosure-list span {
+  color: #4e5359;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .workflow-head {

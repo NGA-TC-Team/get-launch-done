@@ -309,6 +309,18 @@ export default function Page() {
     bgMode === "solid"
       ? getSolidGradientColor(gradientConfig).toUpperCase()
       : `${gradientType === "linear" ? `${gradientAngle}도` : "방사형"} · ${gradientConfig.stops.length}스탑`;
+  const isIntakePhase = uploadedCount === 0;
+  const topbarStatusItems = isIntakePhase
+    ? [releaseStatusLabel, selectedTargetSummary, `${uploadedCount}/${TOTAL_SLOTS} 이미지`]
+    : [
+        releaseStatusLabel,
+        selectedTargetSummary,
+        `${uploadedCount}/${TOTAL_SLOTS} 이미지`,
+        `${exportFileCount}개 파일 생성`,
+        `${String(selected + 1).padStart(2, "0")}번 선택`,
+        `${selectedStoreSummary} ZIP`,
+        ...(hiddenCopyCount ? [`${hiddenCopyCount}개 화면 숨김 설정`] : []),
+      ];
 
   const stageStyle = useMemo<CSSVars>(
     () => ({
@@ -916,15 +928,14 @@ export default function Page() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark" aria-hidden="true" />
           <div>
             <h1>StoreShot</h1>
             <p>스토어 미리보기 제작 도구</p>
           </div>
         </div>
 
-          <>
-            <section className="panel-section">
+        <section className="panel-section">
               <div className="section-label">제출 플랫폼</div>
               <div className="segmented" role="group" aria-label="제출 플랫폼">
                 {(["ios", "android"] as PlatformKey[]).map((key) => (
@@ -974,9 +985,9 @@ export default function Page() {
                 </div>
               </details>
               <p className="hint">기본값은 Phone 단일 ZIP입니다. Tablet, TV, Watch는 필요할 때만 선택하세요.</p>
-            </section>
+        </section>
 
-            <section className="panel-section">
+        <section className="panel-section">
               <details className="advanced-panel">
                 <summary>
                   <span>목업 표시</span>
@@ -992,9 +1003,9 @@ export default function Page() {
                 </label>
               </details>
               <p className="hint">Phone 구성에서만 목업 장식을 조정합니다.</p>
-            </section>
+        </section>
 
-            <section className="panel-section">
+        <section className="panel-section">
               <details className="advanced-panel template-panel">
                 <summary>
                   <span>템플릿</span>
@@ -1029,192 +1040,197 @@ export default function Page() {
                 </button>
               </details>
               <p className="hint">세부 레이아웃 편집은 오른쪽 인스펙터에서 계속 사용할 수 있습니다.</p>
-            </section>
+        </section>
 
-            <section className="panel-section">
-              <div className="section-label">스크린샷 배경</div>
-              <div className="segmented" role="group" aria-label="스크린샷 배경 방식">
-                {(["tonal", "solid"] as BackgroundMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    className={`segment ${bgMode === mode ? "is-active" : ""}`}
-                    type="button"
-                    onClick={() => setBgMode(mode)}
-                  >
-                    {mode === "tonal" ? "톤 분할" : "단색"}
-                  </button>
-                ))}
-              </div>
-              <div className="swatches" aria-label="스크린샷 컬러 테마">
-                {SCREENSHOT_THEMES.map((screenshotTheme) => (
-                  <button
-                    key={screenshotTheme.id}
-                    type="button"
-                    className={`swatch ${screenshotTheme.id === themeId ? "is-active" : ""}`}
-                    style={{ "--a": screenshotTheme.a, "--b": screenshotTheme.b } as CSSVars}
-                    title={screenshotTheme.label}
-                    aria-label={screenshotTheme.label}
-                    onClick={() => applyScreenshotTheme(screenshotTheme.id)}
-                  />
-                ))}
-              </div>
-              <details className="advanced-panel">
+        <section className="panel-section">
+              <details className="advanced-panel background-panel">
                 <summary>
-                  <span>고급 배경 설정</span>
-                  <strong>{backgroundSummary}</strong>
+                  <span>스크린샷 배경</span>
+                  <strong>{theme.label} · {bgMode === "tonal" ? "톤 분할" : "단색"}</strong>
                 </summary>
-                {bgMode === "tonal" ? (
-                  <div className="gradient-editor">
-                    <label className="field">
-                      <span>그라데이션 종류</span>
-                      <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
-                        <option value="linear">선형</option>
-                        <option value="radial">방사형</option>
-                      </select>
-                    </label>
-                    {gradientType === "linear" ? (
-                      <label className="field">
-                        <span>각도</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={359}
-                          value={gradientAngle}
-                          onChange={(event) => setGradientAngle(Number(event.target.value))}
-                        />
-                      </label>
-                    ) : null}
-                    <div className="gradient-heading">
-                      <span>컬러 스탑</span>
+                <div className="background-panel-body">
+                  <div className="segmented" role="group" aria-label="스크린샷 배경 방식">
+                    {(["tonal", "solid"] as BackgroundMode[]).map((mode) => (
                       <button
-                        className="text-action"
+                        key={mode}
+                        className={`segment ${bgMode === mode ? "is-active" : ""}`}
                         type="button"
-                        onClick={addGradientStop}
-                        disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
+                        onClick={() => setBgMode(mode)}
                       >
-                        스탑 추가
+                        {mode === "tonal" ? "톤 분할" : "단색"}
                       </button>
-                    </div>
-                    <div className="gradient-stop-list">
-                      {normalizeGradientStops(gradientStops).map((stop) => (
-                        <div className="gradient-stop-row" key={stop.id}>
-                          <input
-                            aria-label={`${stop.position}% 컬러`}
-                            type="color"
-                            value={stop.color}
-                            onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
-                          />
-                          <input
-                            aria-label={`${stop.color} 위치`}
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={stop.position}
-                            onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
-                          />
-                          <input
-                            aria-label={`${stop.color} 위치 값`}
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={stop.position}
-                            onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
-                          />
-                          <input
-                            className="hex-input"
-                            aria-label={`${stop.color} HEX 값`}
-                            spellCheck={false}
-                            value={gradientHexDrafts[stop.id] ?? stop.color}
-                            onBlur={() => commitGradientStopHex(stop)}
-                            onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
-                          />
+                    ))}
+                  </div>
+                  <div className="swatches" aria-label="스크린샷 컬러 테마">
+                    {SCREENSHOT_THEMES.map((screenshotTheme) => (
+                      <button
+                        key={screenshotTheme.id}
+                        type="button"
+                        className={`swatch ${screenshotTheme.id === themeId ? "is-active" : ""}`}
+                        style={{ "--a": screenshotTheme.a, "--b": screenshotTheme.b } as CSSVars}
+                        title={screenshotTheme.label}
+                        aria-label={screenshotTheme.label}
+                        onClick={() => applyScreenshotTheme(screenshotTheme.id)}
+                      />
+                    ))}
+                  </div>
+                  <details className="subtle-disclosure">
+                    <summary>
+                      <span>고급 배경 설정</span>
+                      <strong>{backgroundSummary}</strong>
+                    </summary>
+                    {bgMode === "tonal" ? (
+                      <div className="gradient-editor">
+                        <label className="field">
+                          <span>그라데이션 종류</span>
+                          <select value={gradientType} onChange={(event) => setGradientType(event.target.value as GradientType)}>
+                            <option value="linear">선형</option>
+                            <option value="radial">방사형</option>
+                          </select>
+                        </label>
+                        {gradientType === "linear" ? (
+                          <label className="field">
+                            <span>각도</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={359}
+                              value={gradientAngle}
+                              onChange={(event) => setGradientAngle(Number(event.target.value))}
+                            />
+                          </label>
+                        ) : null}
+                        <div className="gradient-heading">
+                          <span>컬러 스탑</span>
                           <button
-                            className="text-action stop-remove"
+                            className="text-action"
                             type="button"
-                            onClick={() => removeGradientStop(stop.id)}
-                            disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
+                            onClick={addGradientStop}
+                            disabled={gradientStops.length >= MAX_GRADIENT_STOPS}
                           >
-                            삭제
+                            스탑 추가
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <label className="field color-field">
-                    <span>단색 컬러</span>
-                    <input
-                      type="color"
-                      value={getSolidGradientColor(gradientConfig)}
-                      onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
-                    />
-                    <input
-                      className="hex-input"
-                      aria-label="단색 HEX 값"
-                      spellCheck={false}
-                      value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
-                      onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
-                      onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
-                    />
-                  </label>
-                )}
+                        <div className="gradient-stop-list">
+                          {normalizeGradientStops(gradientStops).map((stop) => (
+                            <div className="gradient-stop-row" key={stop.id}>
+                              <input
+                                aria-label={`${stop.position}% 컬러`}
+                                type="color"
+                                value={stop.color}
+                                onChange={(event) => updateGradientStopColor(stop.id, event.target.value)}
+                              />
+                              <input
+                                aria-label={`${stop.color} 위치`}
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={stop.position}
+                                onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                              />
+                              <input
+                                aria-label={`${stop.color} 위치 값`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={stop.position}
+                                onChange={(event) => updateGradientStop(stop.id, { position: Number(event.target.value) })}
+                              />
+                              <input
+                                className="hex-input"
+                                aria-label={`${stop.color} HEX 값`}
+                                spellCheck={false}
+                                value={gradientHexDrafts[stop.id] ?? stop.color}
+                                onBlur={() => commitGradientStopHex(stop)}
+                                onChange={(event) => updateGradientStopHex(stop.id, event.target.value)}
+                              />
+                              <button
+                                className="text-action stop-remove"
+                                type="button"
+                                onClick={() => removeGradientStop(stop.id)}
+                                disabled={gradientStops.length <= MIN_GRADIENT_STOPS}
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="field color-field">
+                        <span>단색 컬러</span>
+                        <input
+                          type="color"
+                          value={getSolidGradientColor(gradientConfig)}
+                          onChange={(event) => updateGradientStopColor(gradientConfig.stops[0].id, event.target.value)}
+                        />
+                        <input
+                          className="hex-input"
+                          aria-label="단색 HEX 값"
+                          spellCheck={false}
+                          value={gradientHexDrafts[gradientConfig.stops[0].id] ?? getSolidGradientColor(gradientConfig)}
+                          onBlur={() => commitGradientStopHex(gradientConfig.stops[0])}
+                          onChange={(event) => updateGradientStopHex(gradientConfig.stops[0].id, event.target.value)}
+                        />
+                      </label>
+                    )}
+                  </details>
+                </div>
               </details>
-              <p className="hint">앱 작업 UI는 모노크롬으로 유지하고, 제출용 미리보기 이미지는 컬러 배경을 사용할 수 있습니다.</p>
-            </section>
-          </>
+              <p className="hint">컬러와 세부 배경은 필요할 때만 열어 조정합니다.</p>
+        </section>
+        <section className="skill-download" aria-label="앱 출시 준비 스킬 다운로드">
+          <div>
+            <span>Codex / Claude Skill</span>
+            <strong>app-prestore-checks</strong>
+            <p>스토어 문구, 개인정보, QA, 심사 리스크, 출시 자료를 앱 프로젝트 안에서 점검합니다.</p>
+          </div>
+          <a className="skill-download-link" href="/downloads/app-prestore-checks.skill" download>
+            스킬 다운로드
+          </a>
+        </section>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-title">
             <p className="eyebrow">릴리즈 보드</p>
-            <h2>10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다.</h2>
+            <h2>
+              {isIntakePhase
+                ? "이미지부터 추가하세요. 다음 작업은 준비되는 순서대로 열립니다."
+                : "10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다."}
+            </h2>
             <div className="status-strip" aria-label="작업 상태">
-              <span className={releaseReady ? "is-ready" : "needs-work"}>{releaseStatusLabel}</span>
-              <span>{selectedTargetSummary}</span>
-              <span>{uploadedCount}/{TOTAL_SLOTS} 이미지</span>
-              <span>{exportFileCount}개 파일 생성</span>
-              <span>{String(selected + 1).padStart(2, "0")}번 선택</span>
-              <span>{selectedStoreSummary} ZIP</span>
-              {hiddenCopyCount ? <span>{hiddenCopyCount}개 화면 숨김 설정</span> : null}
+              {topbarStatusItems.map((item, index) => (
+                <span
+                  key={`${index}-${item}`}
+                  className={index === 0 ? (releaseReady ? "is-ready" : "needs-work") : undefined}
+                >
+                  {item}
+                </span>
+              ))}
             </div>
-            <div
-              className="topbar-progress"
-              role="progressbar"
-              aria-label="릴리즈 준비율"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={completionPercent}
-            >
-              <span>
-                <i style={{ "--progress": `${completionPercent}%` } as CSSVars} />
-              </span>
-              <strong>{completionPercent}% 준비</strong>
-            </div>
+            {!isIntakePhase ? (
+              <div
+                className="topbar-progress"
+                role="progressbar"
+                aria-label="릴리즈 준비율"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={completionPercent}
+              >
+                <span>
+                  <i style={{ "--progress": `${completionPercent}%` } as CSSVars} />
+                </span>
+                <strong>{completionPercent}% 준비</strong>
+              </div>
+            ) : null}
             <p className="activity-line">
               <span>작업 안내</span>
               {status}
             </p>
           </div>
           <div className="topbar-actions">
-            <div className="action-cluster history-actions" aria-label="작업 이력">
-              <button
-                className="secondary-action"
-                type="button"
-                title="Command+Z"
-                onClick={() => applyHistoryStep("undo")}
-              >
-                되돌리기
-              </button>
-              <button
-                className="secondary-action"
-                type="button"
-                title="Command+Shift+Z"
-                onClick={() => applyHistoryStep("redo")}
-              >
-                다시 실행
-              </button>
-            </div>
             <div className="action-cluster">
               <label className="secondary-action bulk-upload-button topbar-upload" htmlFor="bulk-input">
                 이미지 일괄 추가
@@ -1227,116 +1243,136 @@ export default function Page() {
                 multiple
                 onChange={(event) => handleBulkInput(event, assignFiles)}
               />
-              <button className="secondary-action" type="button" onClick={resetCopy}>
-                기본값 복원
-              </button>
             </div>
-            <div className="export-controls">
-              <label className="topbar-format">
-                <span>이미지 형식</span>
-                <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
-                  <option value="png">PNG</option>
-                  <option value="jpg">JPG</option>
-                </select>
-              </label>
-              {exportFormat === "jpg" ? (
-                <label className="topbar-quality">
-                  <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
-                  <input
-                    type="range"
-                    min={72}
-                    max={100}
-                    value={Math.round(jpgQuality * 100)}
-                    onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
-                  />
-                </label>
-              ) : null}
-              <div className="export-action-group">
-                <button
-                  className={`primary-action ${releaseReady ? "" : "is-blocked"}`}
-                  type="button"
-                  aria-label={
-                    releaseReady
-                      ? "ZIP 내보내기"
-                      : `검수 후 내보내기. ${releaseStatusLabel}. 첫 점검 항목으로 이동합니다.`
-                  }
-                  title={
-                    releaseReady
-                      ? "스토어 제출용 ZIP 파일을 생성합니다."
-                      : `${releaseStatusLabel} · 클릭하면 첫 점검 항목으로 이동합니다.`
-                  }
-                  onClick={exportZip}
-                >
-                  {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+            <details className="topbar-more">
+              <summary>작업</summary>
+              <div className="topbar-more-menu" aria-label="보조 작업">
+                <button className="secondary-action" type="button" title="Command+Z" onClick={() => applyHistoryStep("undo")}>
+                  되돌리기
                 </button>
-                {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
+                <button
+                  className="secondary-action"
+                  type="button"
+                  title="Command+Shift+Z"
+                  onClick={() => applyHistoryStep("redo")}
+                >
+                  다시 실행
+                </button>
+                <button className="secondary-action" type="button" onClick={resetCopy}>
+                  기본값 복원
+                </button>
               </div>
-            </div>
+            </details>
+            {!isIntakePhase ? (
+              <div className="export-controls">
+                <label className="topbar-format">
+                  <span>이미지 형식</span>
+                  <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)}>
+                    <option value="png">PNG</option>
+                    <option value="jpg">JPG</option>
+                  </select>
+                </label>
+                {exportFormat === "jpg" ? (
+                  <label className="topbar-quality">
+                    <span>JPG 품질 {Math.round(jpgQuality * 100)}%</span>
+                    <input
+                      type="range"
+                      min={72}
+                      max={100}
+                      value={Math.round(jpgQuality * 100)}
+                      onChange={(event) => setJpgQuality(Number(event.target.value) / 100)}
+                    />
+                  </label>
+                ) : null}
+                <div className="export-action-group">
+                  <button
+                    className={`primary-action ${releaseReady ? "" : "is-blocked"}`}
+                    type="button"
+                    aria-label={
+                      releaseReady
+                        ? "ZIP 내보내기"
+                        : `검수 후 내보내기. ${releaseStatusLabel}. 첫 점검 항목으로 이동합니다.`
+                    }
+                    title={
+                      releaseReady
+                        ? "스토어 제출용 ZIP 파일을 생성합니다."
+                        : `${releaseStatusLabel} · 클릭하면 첫 점검 항목으로 이동합니다.`
+                    }
+                    onClick={exportZip}
+                  >
+                    {releaseReady ? "ZIP 내보내기" : "검수 후 내보내기"}
+                  </button>
+                  {!releaseReady ? <span>{releaseStatusLabel}</span> : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </header>
 
         <section
-          className={`stage-wrap ${isStageDragging ? "is-stage-dragging" : ""} ${uploadedCount ? "" : "has-intake"}`}
+          className={`stage-wrap ${isStageDragging ? "is-stage-dragging" : ""} ${isIntakePhase ? "is-intake" : ""}`}
           aria-label="스크린샷 미리보기"
           onDragEnter={handleStageDragEnter}
           onDragOver={handleStageDragOver}
           onDragLeave={handleStageDragLeave}
           onDrop={handleStageDrop}
         >
-          <div className="stage-workbar" aria-label="릴리즈 보드 상태">
-            <div className="stage-workbar-title">
-              <span>릴리즈 보드</span>
-              <strong>
-                {String(selected + 1).padStart(2, "0")}번 · {selectedTemplate.label}
-              </strong>
-            </div>
-            <div className="stage-workbar-status">
-              <span className={`shot-state ${selectedBoardState}`}>{selectedStateLabel}</span>
-              <strong>{selectedIssueText}</strong>
-            </div>
-            <div className="stage-workbar-actions" aria-label="보드 이동">
-              <button type="button" onClick={() => moveSelectedSlot(-1)}>
-                이전
-              </button>
-              <button
-                type="button"
-                disabled={!boardIssueTarget}
-                onClick={() => {
-                  if (boardIssueTarget) {
-                    jumpToIssue(boardIssueTarget);
-                  }
-                }}
-              >
-                {selectedIssue ? "현재 점검" : "다음 점검"}
-              </button>
-              <button type="button" onClick={() => moveSelectedSlot(1)}>
-                다음
-              </button>
-            </div>
-            <div className="stage-screen-map" aria-label="전체 화면 준비 상태">
-              <span>화면 상태</span>
-              <div>
-                {slotReadiness.map((readiness, index) => {
-                  const pageState = readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기";
-                  const pageStateClass = readiness.isReady ? "is-ready" : readiness.hasImage ? "needs-review" : "is-empty";
+          {!isIntakePhase ? (
+            <div className="stage-workbar" aria-label="릴리즈 보드 상태">
+              <div className="stage-workbar-title">
+                <span>릴리즈 보드</span>
+                <strong>
+                  {String(selected + 1).padStart(2, "0")}번 · {selectedTemplate.label}
+                </strong>
+              </div>
+              <div className="stage-workbar-status">
+                <span className={`shot-state ${selectedBoardState}`}>{selectedStateLabel}</span>
+                <strong>{selectedIssueText}</strong>
+              </div>
+              <div className="stage-workbar-actions" aria-label="보드 이동">
+                <button type="button" onClick={() => moveSelectedSlot(-1)}>
+                  이전
+                </button>
+                <button
+                  type="button"
+                  disabled={!boardIssueTarget}
+                  onClick={() => {
+                    if (boardIssueTarget) {
+                      jumpToIssue(boardIssueTarget);
+                    }
+                  }}
+                >
+                  {selectedIssue ? "현재 점검" : "다음 점검"}
+                </button>
+                <button type="button" onClick={() => moveSelectedSlot(1)}>
+                  다음
+                </button>
+              </div>
+              <div className="stage-screen-map" aria-label="전체 화면 준비 상태">
+                <span>화면 상태</span>
+                <div>
+                  {slotReadiness.map((readiness, index) => {
+                    const pageState = readiness.isReady ? "준비" : readiness.hasImage ? "점검" : "대기";
+                    const pageStateClass = readiness.isReady ? "is-ready" : readiness.hasImage ? "needs-review" : "is-empty";
 
-                  return (
-                    <button
-                      key={index}
-                      type="button"
-                      className={`${pageStateClass} ${index === selected ? "is-current" : ""}`}
-                      aria-current={index === selected ? "page" : undefined}
-                      aria-label={`${String(index + 1).padStart(2, "0")}번 ${pageState}`}
-                      onClick={() => selectSlot(index)}
-                    >
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <small>{pageState}</small>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        className={`${pageStateClass} ${index === selected ? "is-current" : ""}`}
+                        aria-current={index === selected ? "page" : undefined}
+                        aria-label={`${String(index + 1).padStart(2, "0")}번 ${pageState}`}
+                        onClick={() => selectSlot(index)}
+                      >
+                        <span>{String(index + 1).padStart(2, "0")}</span>
+                        <small>{pageState}</small>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
           {!uploadedCount ? (
             <div className="stage-intake" aria-label="시작 안내">
               <strong>이미지 10장을 보드에 드롭하세요</strong>
@@ -1405,37 +1441,39 @@ export default function Page() {
                       </div>
                     ) : (
                       <>
-                        <div
-                          className="preview-visibility-toggles"
-                          aria-label={`${index + 1}번 텍스트 표시`}
-                          onClick={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={slot.showBadge}
-                              onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
-                            />
-                            <span>뱃지</span>
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={slot.showTitle}
-                              onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
-                            />
-                            <span>제목</span>
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={slot.showSubtitle}
-                              onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
-                            />
-                            <span>설명</span>
-                          </label>
-                        </div>
+                        {!isIntakePhase ? (
+                          <div
+                            className="preview-visibility-toggles"
+                            aria-label={`${index + 1}번 텍스트 표시`}
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={slot.showBadge}
+                                onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
+                              />
+                              <span>뱃지</span>
+                            </label>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={slot.showTitle}
+                                onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
+                              />
+                              <span>제목</span>
+                            </label>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={slot.showSubtitle}
+                                onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
+                              />
+                              <span>설명</span>
+                            </label>
+                          </div>
+                        ) : null}
                         {hasCopy ? (
                           <div className="copy-block">
                             {showBadge ? <span className="template-badge">{slot.badge}</span> : null}
@@ -1496,6 +1534,66 @@ export default function Page() {
       </main>
 
       <aside className="inspector" aria-label="선택 화면 인스펙터">
+        {isIntakePhase ? (
+          <>
+            <div className="inspector-sticky intake-sticky">
+              <div className="inspector-header">
+                <div>
+                  <p className="eyebrow">지금 작업</p>
+                  <h2>이미지 추가</h2>
+                </div>
+                <span className="inspector-badge">{uploadedCount}/{TOTAL_SLOTS}</span>
+              </div>
+              <p className="intake-guidance">업로드 전에는 편집 도구를 접어 두고, 필요한 기본 설정만 유지합니다.</p>
+            </div>
+
+            <section className="workflow-panel intake-workflow" aria-label="이미지 추가">
+              <div className="workflow-head">
+                <div>
+                  <p className="eyebrow">첫 단계</p>
+                  <strong>PNG/JPG 이미지를 추가하세요</strong>
+                </div>
+                <span>{missingImageCount}개 필요</span>
+              </div>
+              <div className="intake-step-list" aria-label="진행 순서">
+                <div className="intake-step is-current">
+                  <span>1</span>
+                  <strong>이미지 추가</strong>
+                </div>
+                <div className="intake-step">
+                  <span>2</span>
+                  <strong>카피/레이아웃 검수</strong>
+                </div>
+                <div className="intake-step">
+                  <span>3</span>
+                  <strong>ZIP 내보내기</strong>
+                </div>
+              </div>
+              <label className="workflow-next" htmlFor="selected-slot-input">
+                선택 위치부터 이미지 추가
+              </label>
+              <input
+                id="selected-slot-input"
+                className="visually-hidden"
+                type="file"
+                accept="image/png,image/jpeg"
+                multiple
+                onChange={handleSelectedImageInput}
+              />
+            </section>
+
+            <details className="inspector-disclosure">
+              <summary>이미지 추가 후 열리는 작업</summary>
+              <div className="disclosure-list">
+                <span>페이지별 문구 편집</span>
+                <span>템플릿과 목업 위치 조정</span>
+                <span>누락 화면 검수와 ZIP 생성</span>
+                <span>AI 프롬프트/JSON 반영</span>
+              </div>
+            </details>
+          </>
+        ) : (
+          <>
         <div className="inspector-sticky">
           <div className="inspector-header">
             <div>
@@ -1951,6 +2049,8 @@ export default function Page() {
             JSON 적용
           </button>
         </section>
+          </>
+        )}
       </aside>
 
       <div className={`toast ${toast ? "is-visible" : ""}`} role="status" aria-live="polite">
