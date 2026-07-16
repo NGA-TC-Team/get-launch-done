@@ -1,4 +1,4 @@
-import type { PlatformDef, PlatformKey } from "./platforms";
+import type { PlatformDef, StoreTargetSpec } from "./platforms";
 
 export type ExportExtension = "png" | "jpg";
 
@@ -6,48 +6,33 @@ export type ExportTarget = {
   name: string;
   slotIndex: number;
   platform: PlatformDef;
-};
-
-export const ipadExportDef: PlatformDef = {
-  label: "iPad",
-  store: "앱스토어 iPad",
-  storeSlug: "ipad",
-  sizeLabel: "앱스토어 iPad 내보내기: 2048 x 2732 (iPad 12.9 또는 13 디스플레이)",
-  width: 2048,
-  height: 2732,
-  ratio: "2048 / 2732",
-  cardWidth: 288,
-  deviceClass: "ios",
+  targetSpec: StoreTargetSpec;
 };
 
 export function getExportTargets({
-  platformKey,
-  platform,
+  targetSpecs,
   count,
   extension,
 }: {
-  platformKey: PlatformKey;
-  platform: PlatformDef;
+  targetSpecs: readonly StoreTargetSpec[];
   count: number;
   extension: ExportExtension;
 }): ExportTarget[] {
   const targets: ExportTarget[] = [];
+  const useFolders = targetSpecs.length > 1;
 
   for (let index = 0; index < count; index += 1) {
     const page = String(index + 1).padStart(2, "0");
-    targets.push({
-      name: `${platform.storeSlug}-${page}.${extension}`,
-      slotIndex: index,
-      platform,
-    });
-
-    if (platformKey === "ios") {
+    targetSpecs.forEach((targetSpec) => {
+      const filePrefix = useFolders ? targetSpec.folderName : targetSpec.platform.storeSlug;
+      const fileName = `${filePrefix}-${page}.${extension}`;
       targets.push({
-        name: `ipad/ipad-${page}.${extension}`,
+        name: useFolders ? `${targetSpec.folderName}/${fileName}` : fileName,
         slotIndex: index,
-        platform: ipadExportDef,
+        platform: targetSpec.platform,
+        targetSpec,
       });
-    }
+    });
   }
 
   return targets;

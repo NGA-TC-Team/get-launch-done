@@ -33,6 +33,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--ink);
+  font-size: 14px;
   font-family:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -232,6 +233,60 @@ textarea:focus-visible,
   margin-top: 12px;
 }
 
+.target-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+  border: 1px solid #333333;
+  border-radius: var(--radius);
+  background: #171717;
+  color: #f7f7f7;
+  margin-top: 12px;
+  padding: 10px;
+}
+
+.target-summary > span {
+  grid-column: 1 / -1;
+  color: #c6c6c6;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.target-summary strong,
+.target-summary small {
+  display: block;
+}
+
+.target-summary strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-summary small {
+  color: #bdbdbd;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.target-summary em {
+  max-width: 96px;
+  overflow: hidden;
+  border: 1px solid #575757;
+  border-radius: 999px;
+  color: #eeeeee;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .template-mini {
   position: relative;
   display: block;
@@ -412,8 +467,71 @@ textarea:focus-visible,
 }
 
 .advanced-panel .gradient-editor,
-.advanced-panel .color-field {
+.advanced-panel .color-field,
+.advanced-panel .target-option-list,
+.advanced-panel.template-panel .field {
   padding: 0 10px;
+}
+
+.advanced-panel.template-panel .template-summary {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.advanced-panel > .toggle-row,
+.advanced-panel > .compact-full {
+  margin: 10px;
+}
+
+.target-option-list {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.target-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  background: #171717;
+  color: #f7f7f7;
+  padding: 9px;
+}
+
+.target-option.is-selected {
+  border-color: #f7f7f7;
+  background: #202024;
+}
+
+.target-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #ffffff;
+}
+
+.target-option strong,
+.target-option small {
+  display: block;
+}
+
+.target-option strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-option small {
+  color: #bfc2c7;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .toggle-row {
@@ -542,6 +660,14 @@ textarea:focus-visible,
   background: #ffffff;
   color: #111111;
   padding: 0 14px;
+}
+
+.secondary-action.compact-full {
+  display: inline-flex;
+  width: calc(100% - 20px);
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
 }
 
 .secondary-action:disabled {
@@ -1108,6 +1234,26 @@ textarea:focus-visible,
   border-radius: 6px;
   content: "";
   pointer-events: none;
+}
+
+.shot-preview:has(.raw-interface-frame)::before {
+  display: none;
+}
+
+.raw-interface-frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  background: #ffffff;
+  place-items: stretch;
+}
+
+.raw-interface-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .copy-block {

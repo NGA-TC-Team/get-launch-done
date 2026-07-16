@@ -34,8 +34,14 @@ import {
 } from "./gradients";
 import type { GradientConfig, GradientStop, GradientType } from "./gradients";
 import { getExportTargets } from "./export-targets";
-import { platformDefs } from "./platforms";
-import type { PlatformDef, PlatformKey } from "./platforms";
+import {
+  getDefaultStoreTargetIds,
+  getStoreTargetSpecs,
+  platformDefs,
+  storeTargetOrder,
+  storeTargetSpecs,
+} from "./platforms";
+import type { PlatformDef, PlatformKey, StoreTargetId, StoreTargetSpec } from "./platforms";
 import { buildPromptForSlot, buildPromptForSlots, parsePromptJson } from "./prompt-copy";
 import {
   DEFAULT_COPY,
@@ -128,8 +134,9 @@ type DeviceGesture = {
 };
 
 type PersistedDraft = {
-  version: 2;
+  version: 3;
   platformKey: PlatformKey;
+  selectedTargetIds: StoreTargetId[];
   bgMode: BackgroundMode;
   themeId: ThemeId;
   gradientType: GradientType;
@@ -227,6 +234,7 @@ function isEditableTarget(target: EventTarget | null) {
 export default function Page() {
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
+  const [selectedTargetIds, setSelectedTargetIds] = useState<StoreTargetId[]>(() => getDefaultStoreTargetIds("ios"));
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
   const [gradientType, setGradientType] = useState<GradientType>("linear");
@@ -248,7 +256,15 @@ export default function Page() {
   const history = useRef(createHistoryState());
   const slotCardRefs = useRef<Array<HTMLElement | null>>([]);
 
-  const platform = platformDefs[platformKey];
+  const selectedTargetSpecs = useMemo<StoreTargetSpec[]>(
+    () => getStoreTargetSpecs(platformKey, selectedTargetIds),
+    [platformKey, selectedTargetIds],
+  );
+  const selectedTargetIdSet = useMemo(
+    () => new Set(selectedTargetSpecs.map((targetSpec) => targetSpec.id)),
+    [selectedTargetSpecs],
+  );
+  const platform = selectedTargetSpecs[0]?.platform ?? platformDefs[platformKey];
   const theme = getThemeById(themeId);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
@@ -264,7 +280,9 @@ export default function Page() {
   const uploadedCount = slotReadiness.filter((item) => item.hasImage).length;
   const missingImageCount = TOTAL_SLOTS - uploadedCount;
   const hiddenCopyCount = slots.filter((slot) => !slot.showBadge || !slot.showTitle || !slot.showSubtitle).length;
-  const exportFileCount = platformKey === "ios" ? TOTAL_SLOTS * 2 : TOTAL_SLOTS;
+  const exportFileCount = selectedTargetSpecs.length * TOTAL_SLOTS;
+  const selectedTargetSummary = selectedTargetSpecs.map((targetSpec) => targetSpec.shortLabel).join(" + ");
+  const selectedStoreSummary = selectedTargetSpecs.map((targetSpec) => targetSpec.label).join(", ");
   const releaseReady = slotReadiness.every((item) => item.isReady);
   const releaseStatusLabel = getReleaseStatusLabel(missingImageCount, copyIssueSlotCount);
   const orderedIssues = getVisibleIssues(slotReadiness, selected, TOTAL_SLOTS);
@@ -296,7 +314,9 @@ export default function Page() {
     () => ({
       "--shot-ratio": platform.ratio,
       "--card-width":
-        platformKey === "ios"
+        platform.renderMode === "raw-interface"
+          ? `clamp(220px, calc(100vh - 470px), ${platform.cardWidth}px)`
+          : platformKey === "ios"
           ? `clamp(204px, calc(44vh - 141px), ${platform.cardWidth}px)`
           : `clamp(240px, calc(100vh - 470px), ${platform.cardWidth}px)`,
       "--preview-background": previewBackground,
@@ -307,7 +327,7 @@ export default function Page() {
       "--preview-panel": theme.panel,
       "--device-ratio": `${IPHONE_17_PRO_DEVICE.widthMm} / ${IPHONE_17_PRO_DEVICE.heightMm}`,
     }),
-    [bgMode, platform.cardWidth, platform.ratio, platformKey, previewBackground, theme],
+    [bgMode, platform.cardWidth, platform.ratio, platform.renderMode, platformKey, previewBackground, theme],
   );
 
   async function assignFiles(startIndex: number, files: File[]) {
@@ -356,6 +376,7 @@ export default function Page() {
 
   function applyDraft(draft: PersistedDraft) {
     setPlatformKey(draft.platformKey);
+    setSelectedTargetIds(draft.selectedTargetIds);
     setBgMode(draft.bgMode);
     setThemeId(draft.themeId);
     setGradientType(draft.gradientType);
@@ -377,6 +398,20 @@ export default function Page() {
 
   function updateSelectedSlot(update: Partial<Slot>) {
     updateSlot(selected, update);
+  }
+
+  function changePlatform(key: PlatformKey) {
+    setPlatformKey(key);
+    setSelectedTargetIds(getDefaultStoreTargetIds(key));
+    setStatus(`${platformDefs[key].label} 기본 Phone 규격으로 전환했습니다.`);
+  }
+
+  function toggleStoreTarget(targetId: StoreTargetId) {
+    setSelectedTargetIds((current) => {
+      const nextIds = current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId];
+      const normalized = getStoreTargetSpecs(platformKey, nextIds).map((targetSpec) => targetSpec.id);
+      return normalized;
+    });
   }
 
   function goToSlot(index: number) {
@@ -537,8 +572,7 @@ export default function Page() {
       setStatus("미리보기 이미지를 렌더링하는 중입니다...");
       const files: ZipFile[] = [];
       const targets = getExportTargets({
-        platformKey,
-        platform,
+        targetSpecs: selectedTargetSpecs,
         count: slots.length,
         extension: exportFormat,
       });
@@ -569,7 +603,7 @@ export default function Page() {
       const url = URL.createObjectURL(zipBlob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${platformKey}-store-screenshots.zip`;
+      link.download = `${platformKey}-${selectedTargetSpecs.length === 1 ? selectedTargetSpecs[0].folderName : "multi"}-store-screenshots.zip`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -793,8 +827,9 @@ export default function Page() {
     }
 
     const draft: PersistedDraft = {
-      version: 2,
+      version: 3,
       platformKey,
+      selectedTargetIds: selectedTargetSpecs.map((targetSpec) => targetSpec.id),
       bgMode,
       themeId,
       gradientType,
@@ -821,6 +856,7 @@ export default function Page() {
     hideDeviceCutout,
     jpgQuality,
     platformKey,
+    selectedTargetSpecs,
     selected,
     slots,
     themeId,
@@ -896,62 +932,103 @@ export default function Page() {
                     key={key}
                     className={`segment ${platformKey === key ? "is-active" : ""}`}
                     type="button"
-                    onClick={() => setPlatformKey(key)}
+                    onClick={() => changePlatform(key)}
                   >
                     {platformDefs[key].label}
                   </button>
                 ))}
               </div>
-              <p className="hint">{platform.sizeLabel}</p>
-            </section>
-
-            <section className="panel-section">
-              <div className="section-label">목업 표시</div>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={hideDeviceCutout}
-                  onChange={(event) => setHideDeviceCutout(event.target.checked)}
-                />
-                <span>카메라/아일랜드 숨김</span>
-              </label>
-              <p className="hint">iOS는 다이내믹 아일랜드, Android는 중앙 카메라를 숨깁니다.</p>
-            </section>
-
-            <section className="panel-section">
-              <div className="section-row">
+              <div className="target-summary" aria-label="현재 내보내기 규격">
+                <span>기본 규격</span>
                 <div>
-                  <div className="section-label">템플릿</div>
-                  <p className="hint">선택한 화면에 적용됩니다.</p>
+                  <strong>{platform.label}</strong>
+                  <small>
+                    {platform.width} x {platform.height} · {exportFileCount}개 파일
+                  </small>
                 </div>
-                <button className="text-action" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
-                  전체 적용
-                </button>
+                <em>{selectedTargetSummary}</em>
               </div>
-              <label className="field template-picker">
-                <span>선택 화면 템플릿</span>
-                <select
-                  value={selectedSlot.templateId}
-                  onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
-                >
-                  {SCREENSHOT_TEMPLATES.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="template-summary" aria-label="현재 템플릿 요약">
-                <span className={`template-mini mini-${selectedTemplate.family}`} aria-hidden="true">
-                  <span />
-                  <i />
-                </span>
-                <div>
+              <details className="advanced-panel target-panel">
+                <summary>
+                  <span>추가 규격</span>
+                  <strong>{selectedTargetSpecs.length}개 선택</strong>
+                </summary>
+                <div className="target-option-list">
+                  {storeTargetOrder[platformKey].map((targetId) => {
+                    const targetSpec = storeTargetSpecs[targetId];
+                    const checked = selectedTargetIdSet.has(targetId);
+                    return (
+                      <label className={`target-option ${checked ? "is-selected" : ""}`} key={targetId}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStoreTarget(targetId)}
+                        />
+                        <span>
+                          <strong>{targetSpec.label}</strong>
+                          <small>{targetSpec.requirement}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </details>
+              <p className="hint">기본값은 Phone 단일 ZIP입니다. Tablet, TV, Watch는 필요할 때만 선택하세요.</p>
+            </section>
+
+            <section className="panel-section">
+              <details className="advanced-panel">
+                <summary>
+                  <span>목업 표시</span>
+                  <strong>{hideDeviceCutout ? "카메라 숨김" : "기본"}</strong>
+                </summary>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={hideDeviceCutout}
+                    onChange={(event) => setHideDeviceCutout(event.target.checked)}
+                  />
+                  <span>카메라/아일랜드 숨김</span>
+                </label>
+              </details>
+              <p className="hint">Phone 구성에서만 목업 장식을 조정합니다.</p>
+            </section>
+
+            <section className="panel-section">
+              <details className="advanced-panel template-panel">
+                <summary>
+                  <span>템플릿</span>
                   <strong>{selectedTemplate.label}</strong>
-                  <p>{selectedTemplate.description}</p>
+                </summary>
+                <label className="field template-picker">
+                  <span>선택 화면 템플릿</span>
+                  <select
+                    value={selectedSlot.templateId}
+                    onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+                  >
+                    {SCREENSHOT_TEMPLATES.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="template-summary" aria-label="현재 템플릿 요약">
+                  <span className={`template-mini mini-${selectedTemplate.family}`} aria-hidden="true">
+                    <span />
+                    <i />
+                  </span>
+                  <div>
+                    <strong>{selectedTemplate.label}</strong>
+                    <p>{selectedTemplate.description}</p>
+                  </div>
+                  <em>{selectedTemplate.badge}</em>
                 </div>
-                <em>{selectedTemplate.badge}</em>
-              </div>
+                <button className="secondary-action compact-full" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
+                  현재 템플릿 전체 적용
+                </button>
+              </details>
+              <p className="hint">세부 레이아웃 편집은 오른쪽 인스펙터에서 계속 사용할 수 있습니다.</p>
             </section>
 
             <section className="panel-section">
@@ -1094,11 +1171,11 @@ export default function Page() {
             <h2>10개 스토어 미리보기 화면을 한 번에 검수하고 내보냅니다.</h2>
             <div className="status-strip" aria-label="작업 상태">
               <span className={releaseReady ? "is-ready" : "needs-work"}>{releaseStatusLabel}</span>
-              <span>{platform.label}</span>
+              <span>{selectedTargetSummary}</span>
               <span>{uploadedCount}/{TOTAL_SLOTS} 이미지</span>
               <span>{exportFileCount}개 파일 생성</span>
               <span>{String(selected + 1).padStart(2, "0")}번 선택</span>
-              {platformKey === "ios" ? <span>iPhone + iPad ZIP</span> : <span>Google Play ZIP</span>}
+              <span>{selectedStoreSummary} ZIP</span>
               {hiddenCopyCount ? <span>{hiddenCopyCount}개 화면 숨김 설정</span> : null}
             </div>
             <div
@@ -1316,53 +1393,8 @@ export default function Page() {
                       void assignFiles(index, Array.from(event.dataTransfer.files));
                     }}
                   >
-                    <div
-                      className="preview-visibility-toggles"
-                      aria-label={`${index + 1}번 텍스트 표시`}
-                      onClick={(event) => event.stopPropagation()}
-                      onPointerDown={(event) => event.stopPropagation()}
-                    >
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showBadge}
-                          onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
-                        />
-                        <span>뱃지</span>
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showTitle}
-                          onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
-                        />
-                        <span>제목</span>
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={slot.showSubtitle}
-                          onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
-                        />
-                        <span>설명</span>
-                      </label>
-                    </div>
-                    {hasCopy ? (
-                      <div className="copy-block">
-                        {showBadge ? <span className="template-badge">{slot.badge}</span> : null}
-                        {showTitle ? <h3>{slot.title}</h3> : null}
-                        {showSubtitle ? <p className="copy-subtitle">{slot.subtitle}</p> : null}
-                      </div>
-                    ) : null}
-                    <div
-                      className={`device-frame ${platform.deviceClass} ${index === selected ? "is-transform-selected" : ""}`}
-                      style={createDeviceTransformStyle(slot.deviceTransform)}
-                      onPointerDown={(event) => startDeviceGesture(event, index, "move")}
-                      onPointerMove={updateDeviceGesture}
-                      onPointerUp={endDeviceGesture}
-                      onPointerCancel={endDeviceGesture}
-                    >
-                      <div className="device-screen">
+                    {platform.renderMode === "raw-interface" ? (
+                      <div className="raw-interface-frame">
                         {slot.imageDataUrl ? (
                           // User-selected data URLs are local previews, so Next image optimization is not useful here.
                           // eslint-disable-next-line @next/next/no-img-element
@@ -1371,24 +1403,83 @@ export default function Page() {
                           <div className="empty-screen">이미지를 놓으세요</div>
                         )}
                       </div>
-                      {shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
-                      {index === selected ? (
-                        <div className="device-transform-handles" aria-label="목업 직접 조정">
-                          <button
-                            className="device-transform-handle rotate"
-                            type="button"
-                            aria-label="목업 회전"
-                            onPointerDown={(event) => startDeviceGesture(event, index, "rotate")}
-                          />
-                          <button
-                            className="device-transform-handle scale"
-                            type="button"
-                            aria-label="목업 크기 조절"
-                            onPointerDown={(event) => startDeviceGesture(event, index, "scale")}
-                          />
+                    ) : (
+                      <>
+                        <div
+                          className="preview-visibility-toggles"
+                          aria-label={`${index + 1}번 텍스트 표시`}
+                          onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={slot.showBadge}
+                              onChange={(event) => updateSlot(index, { showBadge: event.target.checked })}
+                            />
+                            <span>뱃지</span>
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={slot.showTitle}
+                              onChange={(event) => updateSlot(index, { showTitle: event.target.checked })}
+                            />
+                            <span>제목</span>
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={slot.showSubtitle}
+                              onChange={(event) => updateSlot(index, { showSubtitle: event.target.checked })}
+                            />
+                            <span>설명</span>
+                          </label>
                         </div>
-                      ) : null}
-                    </div>
+                        {hasCopy ? (
+                          <div className="copy-block">
+                            {showBadge ? <span className="template-badge">{slot.badge}</span> : null}
+                            {showTitle ? <h3>{slot.title}</h3> : null}
+                            {showSubtitle ? <p className="copy-subtitle">{slot.subtitle}</p> : null}
+                          </div>
+                        ) : null}
+                        <div
+                          className={`device-frame ${platform.deviceClass} ${index === selected ? "is-transform-selected" : ""}`}
+                          style={createDeviceTransformStyle(slot.deviceTransform)}
+                          onPointerDown={(event) => startDeviceGesture(event, index, "move")}
+                          onPointerMove={updateDeviceGesture}
+                          onPointerUp={endDeviceGesture}
+                          onPointerCancel={endDeviceGesture}
+                        >
+                          <div className="device-screen">
+                            {slot.imageDataUrl ? (
+                              // User-selected data URLs are local previews, so Next image optimization is not useful here.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img alt={`${index + 1}번 업로드 이미지`} src={slot.imageDataUrl} />
+                            ) : (
+                              <div className="empty-screen">이미지를 놓으세요</div>
+                            )}
+                          </div>
+                          {shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
+                          {index === selected ? (
+                            <div className="device-transform-handles" aria-label="목업 직접 조정">
+                              <button
+                                className="device-transform-handle rotate"
+                                type="button"
+                                aria-label="목업 회전"
+                                onPointerDown={(event) => startDeviceGesture(event, index, "rotate")}
+                              />
+                              <button
+                                className="device-transform-handle scale"
+                                type="button"
+                                aria-label="목업 크기 조절"
+                                onPointerDown={(event) => startDeviceGesture(event, index, "scale")}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </>
+                    )}
                     <div className="drop-indicator">여기에 이미지 놓기</div>
                   </div>
                   <div className="shot-footer">
@@ -1714,16 +1805,16 @@ export default function Page() {
                   {exportFileCount}개 {exportFormat.toUpperCase()}
                 </strong>
               </div>
-              <small>{platformKey === "ios" ? "iPad 포함" : "단일 폴더"}</small>
+              <small>{selectedTargetSummary}</small>
             </div>
           </div>
           <div className="readiness-panel" aria-label="내보내기 파일 구성">
             <div className="readiness-row">
               <span>대상 스토어</span>
-              <strong>{platform.store}</strong>
+              <strong>{selectedStoreSummary}</strong>
             </div>
             <div className="readiness-row">
-              <span>기본 해상도</span>
+              <span>현재 미리보기</span>
               <strong>
                 {platform.width} x {platform.height}
               </strong>
@@ -1736,8 +1827,8 @@ export default function Page() {
               </strong>
             </div>
             <div className="readiness-row">
-              <span>추가 폴더</span>
-              <strong>{platformKey === "ios" ? "ipad 포함" : "없음"}</strong>
+              <span>선택 규격</span>
+              <strong>{selectedTargetSpecs.map((targetSpec) => targetSpec.label).join(" · ")}</strong>
             </div>
           </div>
         </section>
@@ -1927,9 +2018,12 @@ function normalizeStoredDraft(value: unknown): PersistedDraft | null {
     return null;
   }
 
+  const platformKey = value.platformKey === "android" ? "android" : "ios";
+
   return {
-    version: 2,
-    platformKey: value.platformKey === "android" ? "android" : "ios",
+    version: 3,
+    platformKey,
+    selectedTargetIds: normalizeStoredTargetIds(platformKey, value.selectedTargetIds),
     bgMode: value.bgMode === "solid" ? "solid" : "tonal",
     themeId: normalizeThemeId(value.themeId),
     gradientType: value.gradientType === "radial" ? "radial" : "linear",
@@ -1942,6 +2036,11 @@ function normalizeStoredDraft(value: unknown): PersistedDraft | null {
     selected: normalizeSelectedIndex(value.selected),
     slots: normalizeStoredSlots(value.slots),
   };
+}
+
+function normalizeStoredTargetIds(platformKey: PlatformKey, value: unknown): StoreTargetId[] {
+  const selectedIds = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return getStoreTargetSpecs(platformKey, selectedIds).map((targetSpec) => targetSpec.id);
 }
 
 function normalizeStoredSlots(value: unknown) {
@@ -2114,8 +2213,12 @@ async function renderSlotToBlob({
   if (!ctx) {
     throw new Error("Canvas is unavailable");
   }
-  drawBackground(ctx, canvas.width, canvas.height, bgMode, gradientConfig);
-  await drawTemplate(ctx, canvas, slot, platform, template, theme, hideDeviceCutout);
+  if (platform.renderMode === "raw-interface") {
+    await drawRawInterface(ctx, canvas, slot.imageDataUrl);
+  } else {
+    drawBackground(ctx, canvas.width, canvas.height, bgMode, gradientConfig);
+    await drawTemplate(ctx, canvas, slot, platform, template, theme, hideDeviceCutout);
+  }
   const mime = exportFormat === "jpg" ? "image/jpeg" : "image/png";
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -2130,6 +2233,19 @@ async function renderSlotToBlob({
       jpgQuality,
     );
   });
+}
+
+async function drawRawInterface(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, dataUrl: string) {
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (dataUrl) {
+    const image = await loadImage(dataUrl);
+    drawImageCover(ctx, image, 0, 0, canvas.width, canvas.height);
+  } else {
+    drawEmptyScreen(ctx, { x: 0, y: 0, width: canvas.width, height: canvas.height });
+  }
+  ctx.restore();
 }
 
 async function drawTemplate(
