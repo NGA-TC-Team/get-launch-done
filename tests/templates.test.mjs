@@ -10,6 +10,7 @@ import {
   SCREENSHOT_THEMES,
   getCategoryPackById,
   getTemplateById,
+  getTemplatePreviewOptions,
 } from "../src/app/templates";
 
 describe("SCREENSHOT_TEMPLATES", () => {
@@ -109,6 +110,19 @@ describe("SCREENSHOT_TEMPLATES", () => {
     expect(defaultPack.id).toBe(DEFAULT_CATEGORY_PACK_ID);
     expect(defaultPack.templateIds).toHaveLength(10);
     expect(getCategoryPackById("missing-pack-id")).toBe(defaultPack);
+  });
+
+  test("템플릿 선택 모달용 미리보기 옵션을 모든 템플릿에 제공한다", () => {
+    const options = getTemplatePreviewOptions("fake-3d-01");
+
+    expect(options).toHaveLength(SCREENSHOT_TEMPLATES.length);
+    expect(options.find((option) => option.id === "fake-3d-01")).toMatchObject({
+      id: "fake-3d-01",
+      family: "fake-3d",
+      isSelected: true,
+      miniClassName: "template-mini mini-fake-3d",
+    });
+    expect(options.every((option) => option.label && option.description && option.badge)).toBe(true);
   });
 
   test("스크린샷 배경 테마는 모노크롬 UI와 분리된 컬러 팔레트를 포함한다", () => {

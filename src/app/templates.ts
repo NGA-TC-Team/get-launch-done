@@ -377,10 +377,23 @@ export type ScreenshotTemplate = (typeof SCREENSHOT_TEMPLATE_BLUEPRINTS)[number]
   prompt: string;
 };
 
+export type TemplatePreviewOption = ScreenshotTemplate & {
+  isSelected: boolean;
+  miniClassName: string;
+};
+
 export const SCREENSHOT_TEMPLATES = SCREENSHOT_TEMPLATE_BLUEPRINTS.map((template) => ({
   ...template,
   prompt: createTemplatePrompt(template),
 })) as readonly ScreenshotTemplate[];
+
+export function getTemplatePreviewOptions(selectedTemplateId: string): TemplatePreviewOption[] {
+  return SCREENSHOT_TEMPLATES.map((template) => ({
+    ...template,
+    isSelected: template.id === selectedTemplateId,
+    miniClassName: `template-mini mini-${template.family}`,
+  }));
+}
 
 export const DEFAULT_TEMPLATE_SEQUENCE = [
   "hero-center-01",

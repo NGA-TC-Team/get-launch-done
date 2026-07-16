@@ -63,6 +63,6 @@ describe("export targets", () => {
       [1920, 1080],
       [384, 384],
     ]);
-    expect(storeTargetSpecs["android-wear"].platform.renderMode).toBe("raw-interface");
+    expect(storeTargetSpecs["android-wear"].platform.renderMode).toBe("composed");
   });
 });

@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { getDefaultStoreTargetIds, getStoreTargetSpecs, platformDefs, storeTargetSpecs } from "../src/app/platforms";
+import {
+  getDefaultStoreTargetIds,
+  getPreviewDeviceProfile,
+  getPreviewTargetSpec,
+  getStoreTargetSpecs,
+  platformDefs,
+  storeTargetSpecs,
+} from "../src/app/platforms";
 
 describe("platform definitions", () => {
   test("iOS 기본 제출용 페이지 해상도는 App Store 6.9 디스플레이 세로 규격을 사용한다", () => {
@@ -36,5 +43,46 @@ describe("platform definitions", () => {
     expect(storeTargetSpecs["android-tablet"].platform.sizeLabel).toContain("1920 x 1080");
     expect(storeTargetSpecs["android-tv"].platform.sizeLabel).toContain("1920 x 1080");
     expect(storeTargetSpecs["android-wear"].platform.sizeLabel).toContain("384 x 384");
+  });
+
+  test("선택된 추가 규격 중 하나를 현재 미리보기 규격으로 유지한다", () => {
+    const preview = getPreviewTargetSpec("ios", ["ios-phone-69", "ios-tablet-13", "ios-tv"], "ios-tv");
+
+    expect(preview.id).toBe("ios-tv");
+    expect(preview.platform.width).toBe(1920);
+    expect(preview.platform.height).toBe(1080);
+  });
+
+  test("현재 미리보기 규격이 선택 목록에서 빠지면 첫 선택 규격으로 되돌린다", () => {
+    const preview = getPreviewTargetSpec("android", ["android-phone", "android-tablet"], "android-tv");
+
+    expect(preview.id).toBe("android-phone");
+  });
+
+  test("phone, tablet, TV, watch는 서로 다른 목업/카피 배치 프로파일을 가진다", () => {
+    expect(getPreviewDeviceProfile(storeTargetSpecs["ios-phone-69"].platform)).toMatchObject({
+      frameClass: "phone",
+      copyLayout: "phone",
+      supportsCutout: true,
+      isWide: false,
+    });
+    expect(getPreviewDeviceProfile(storeTargetSpecs["android-tablet"].platform)).toMatchObject({
+      frameClass: "tablet",
+      copyLayout: "wide",
+      supportsCutout: false,
+      isWide: true,
+    });
+    expect(getPreviewDeviceProfile(storeTargetSpecs["ios-tv"].platform)).toMatchObject({
+      frameClass: "tv",
+      copyLayout: "wide",
+      supportsCutout: false,
+      isWide: true,
+    });
+    expect(getPreviewDeviceProfile(storeTargetSpecs["android-wear"].platform)).toMatchObject({
+      frameClass: "watch",
+      copyLayout: "compact",
+      supportsCutout: false,
+      isWide: false,
+    });
   });
 });

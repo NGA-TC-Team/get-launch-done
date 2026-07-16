@@ -1,5 +1,7 @@
 export type PlatformKey = "ios" | "android";
 export type StoreTargetCategory = "phone" | "tablet" | "tv" | "watch";
+export type PreviewDeviceClass = "phone" | "tablet" | "tv" | "watch";
+export type PreviewCopyLayout = "phone" | "tablet" | "wide" | "compact";
 export type StoreRenderMode = "composed" | "raw-interface";
 export type StoreTargetId =
   | "ios-phone-69"
@@ -20,8 +22,17 @@ export type PlatformDef = {
   height: number;
   ratio: string;
   cardWidth: number;
-  deviceClass: string;
+  deviceClass: PreviewDeviceClass;
   renderMode?: StoreRenderMode;
+};
+
+export type PreviewDeviceProfile = {
+  frameClass: PreviewDeviceClass;
+  deviceRatio: string;
+  copyLayout: PreviewCopyLayout;
+  isWide: boolean;
+  usesDeviceFrame: boolean;
+  supportsCutout: boolean;
 };
 
 export type StoreTargetSpec = {
@@ -57,7 +68,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       height: 2868,
       ratio: "1320 / 2868",
       cardWidth: 288,
-      deviceClass: "ios",
+      deviceClass: "phone",
       renderMode: "composed",
     },
   },
@@ -80,7 +91,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       height: 2752,
       ratio: "2064 / 2752",
       cardWidth: 288,
-      deviceClass: "ios",
+      deviceClass: "tablet",
       renderMode: "composed",
     },
   },
@@ -104,7 +115,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       ratio: "1920 / 1080",
       cardWidth: 360,
       deviceClass: "tv",
-      renderMode: "raw-interface",
+      renderMode: "composed",
     },
   },
   "ios-watch": {
@@ -127,7 +138,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       ratio: "422 / 514",
       cardWidth: 220,
       deviceClass: "watch",
-      renderMode: "raw-interface",
+      renderMode: "composed",
     },
   },
   "android-phone": {
@@ -149,7 +160,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       height: 1920,
       ratio: "1080 / 1920",
       cardWidth: 312,
-      deviceClass: "android",
+      deviceClass: "phone",
       renderMode: "composed",
     },
   },
@@ -172,8 +183,8 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       height: 1080,
       ratio: "1920 / 1080",
       cardWidth: 360,
-      deviceClass: "android",
-      renderMode: "raw-interface",
+      deviceClass: "tablet",
+      renderMode: "composed",
     },
   },
   "android-tv": {
@@ -196,7 +207,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       ratio: "1920 / 1080",
       cardWidth: 360,
       deviceClass: "tv",
-      renderMode: "raw-interface",
+      renderMode: "composed",
     },
   },
   "android-wear": {
@@ -219,7 +230,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
       ratio: "384 / 384",
       cardWidth: 220,
       deviceClass: "watch",
-      renderMode: "raw-interface",
+      renderMode: "composed",
     },
   },
 };
@@ -244,6 +255,61 @@ export function getStoreTargetSpecs(platformKey: PlatformKey, selectedTargetIds:
   );
   const specs = storeTargetOrder[platformKey].filter((id) => selected.has(id)).map((id) => storeTargetSpecs[id]);
   return specs.length ? specs : getDefaultStoreTargetIds(platformKey).map((id) => storeTargetSpecs[id]);
+}
+
+export function getPreviewTargetSpec(
+  platformKey: PlatformKey,
+  selectedTargetIds: readonly string[],
+  previewTargetId: string,
+): StoreTargetSpec {
+  const specs = getStoreTargetSpecs(platformKey, selectedTargetIds);
+  return specs.find((targetSpec) => targetSpec.id === previewTargetId) ?? specs[0];
+}
+
+export function getPreviewDeviceProfile(platform: PlatformDef): PreviewDeviceProfile {
+  const isWide = platform.width > platform.height;
+
+  if (platform.deviceClass === "phone") {
+    return {
+      frameClass: "phone",
+      deviceRatio: platform.storeSlug === "app-store" ? "71.9 / 150" : "9 / 19.2",
+      copyLayout: "phone",
+      isWide,
+      usesDeviceFrame: true,
+      supportsCutout: true,
+    };
+  }
+
+  if (platform.deviceClass === "tablet") {
+    return {
+      frameClass: "tablet",
+      deviceRatio: platform.ratio,
+      copyLayout: isWide ? "wide" : "tablet",
+      isWide,
+      usesDeviceFrame: true,
+      supportsCutout: false,
+    };
+  }
+
+  if (platform.deviceClass === "tv") {
+    return {
+      frameClass: "tv",
+      deviceRatio: "16 / 9",
+      copyLayout: "wide",
+      isWide: true,
+      usesDeviceFrame: true,
+      supportsCutout: false,
+    };
+  }
+
+  return {
+    frameClass: "watch",
+    deviceRatio: platform.ratio,
+    copyLayout: "compact",
+    isWide,
+    usesDeviceFrame: true,
+    supportsCutout: false,
+  };
 }
 
 export function isStoreTargetId(value: string): value is StoreTargetId {

@@ -37,6 +37,8 @@ import type { GradientConfig, GradientStop, GradientType } from "./gradients";
 import { getExportTargets } from "./export-targets";
 import {
   getDefaultStoreTargetIds,
+  getPreviewDeviceProfile,
+  getPreviewTargetSpec,
   getStoreTargetSpecs,
   platformDefs,
   storeTargetOrder,
@@ -55,6 +57,7 @@ import {
   SCREENSHOT_TEMPLATES,
   getCategoryPackById,
   getTemplateById,
+  getTemplatePreviewOptions,
   getThemeById,
 } from "./templates";
 import type { CategoryId, ScreenshotCategoryPack, ScreenshotTemplate, ScreenshotTheme, TemplateFamily, TemplateId, ThemeId } from "./templates";
@@ -211,6 +214,7 @@ type PersistedDraft = {
   version: 3;
   platformKey: PlatformKey;
   selectedTargetIds: StoreTargetId[];
+  previewTargetId: StoreTargetId;
   bgMode: BackgroundMode;
   themeId: ThemeId;
   gradientType: GradientType;
@@ -326,6 +330,7 @@ export default function Page() {
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
   const [platformKey, setPlatformKey] = useState<PlatformKey>("ios");
   const [selectedTargetIds, setSelectedTargetIds] = useState<StoreTargetId[]>(() => getDefaultStoreTargetIds("ios"));
+  const [previewTargetId, setPreviewTargetId] = useState<StoreTargetId>(() => getDefaultStoreTargetIds("ios")[0]);
   const [bgMode, setBgMode] = useState<BackgroundMode>("tonal");
   const [themeId, setThemeId] = useState<ThemeId>("launch-green");
   const [gradientType, setGradientType] = useState<GradientType>("linear");
@@ -344,6 +349,7 @@ export default function Page() {
   const [toast, setToast] = useState("");
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [isStageDragging, setIsStageDragging] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const activeDeviceGesture = useRef<DeviceGesture | null>(null);
   const history = useRef(createHistoryState());
   const slotCardRefs = useRef<Array<HTMLElement | null>>([]);
@@ -356,7 +362,9 @@ export default function Page() {
     () => new Set(selectedTargetSpecs.map((targetSpec) => targetSpec.id)),
     [selectedTargetSpecs],
   );
-  const platform = selectedTargetSpecs[0]?.platform ?? platformDefs[platformKey];
+  const previewTargetSpec = getPreviewTargetSpec(platformKey, selectedTargetIds, previewTargetId);
+  const previewDeviceProfile = getPreviewDeviceProfile(previewTargetSpec.platform);
+  const platform = previewTargetSpec.platform;
   const theme = getThemeById(themeId);
   const selectedCategoryPack = getCategoryPackById(selectedCategoryPackId);
   const selectedCategory =
@@ -365,6 +373,10 @@ export default function Page() {
   const categoryPacks = SCREENSHOT_CATEGORY_PACKS.filter((pack) => pack.categoryId === selectedCategory.id);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
+  const templatePreviewOptions = useMemo(
+    () => getTemplatePreviewOptions(selectedSlot.templateId),
+    [selectedSlot.templateId],
+  );
   const slotReadiness = slots.map(getSlotReadiness);
   const selectedReadiness = slotReadiness[selected];
   const selectedNeedsImage = !selectedReadiness.hasImage;
@@ -380,6 +392,7 @@ export default function Page() {
   const exportFileCount = selectedTargetSpecs.length * TOTAL_SLOTS;
   const selectedTargetSummary = selectedTargetSpecs.map((targetSpec) => targetSpec.shortLabel).join(" + ");
   const selectedStoreSummary = selectedTargetSpecs.map((targetSpec) => targetSpec.label).join(", ");
+  const previewTargetSummary = `${previewTargetSpec.label} · ${platform.width} x ${platform.height}`;
   const releaseReady = slotReadiness.every((item) => item.isReady);
   const releaseStatusLabel = getReleaseStatusLabel(missingImageCount, copyIssueSlotCount);
   const orderedIssues = getVisibleIssues(slotReadiness, selected, TOTAL_SLOTS);
@@ -423,25 +436,24 @@ export default function Page() {
         ...(hiddenCopyCount ? [{ icon: "eye" as IconName, label: `${hiddenCopyCount}개 숨김` }] : []),
       ];
 
-  const stageStyle = useMemo<CSSVars>(
-    () => ({
-      "--shot-ratio": platform.ratio,
-      "--card-width":
-        platform.renderMode === "raw-interface"
-          ? `clamp(220px, calc(100vh - 470px), ${platform.cardWidth}px)`
-          : platformKey === "ios"
-          ? `clamp(204px, calc(44vh - 141px), ${platform.cardWidth}px)`
-          : `clamp(240px, calc(100vh - 470px), ${platform.cardWidth}px)`,
-      "--preview-background": previewBackground,
-      "--preview-a": theme.a,
-      "--preview-b": bgMode === "solid" ? theme.a : theme.b,
-      "--preview-ink": theme.foreground,
-      "--preview-muted": theme.muted,
-      "--preview-panel": theme.panel,
-      "--device-ratio": `${IPHONE_17_PRO_DEVICE.widthMm} / ${IPHONE_17_PRO_DEVICE.heightMm}`,
-    }),
-    [bgMode, platform.cardWidth, platform.ratio, platform.renderMode, platformKey, previewBackground, theme],
-  );
+  const stageStyle: CSSVars = {
+    "--shot-ratio": platform.ratio,
+    "--card-width":
+      previewDeviceProfile.copyLayout === "wide"
+        ? `clamp(320px, calc(100vh - 450px), ${platform.cardWidth}px)`
+        : previewDeviceProfile.copyLayout === "compact"
+        ? `clamp(170px, calc(100vh - 520px), ${platform.cardWidth}px)`
+        : platformKey === "ios"
+        ? `clamp(204px, calc(44vh - 141px), ${platform.cardWidth}px)`
+        : `clamp(240px, calc(100vh - 470px), ${platform.cardWidth}px)`,
+    "--preview-background": previewBackground,
+    "--preview-a": theme.a,
+    "--preview-b": bgMode === "solid" ? theme.a : theme.b,
+    "--preview-ink": theme.foreground,
+    "--preview-muted": theme.muted,
+    "--preview-panel": theme.panel,
+    "--device-ratio": previewDeviceProfile.deviceRatio,
+  };
 
   async function assignFiles(startIndex: number, files: File[]) {
     const images = files.filter((file) => /^image\/(png|jpe?g)$/i.test(file.type));
@@ -500,6 +512,7 @@ export default function Page() {
     setExportFormat(draft.exportFormat);
     setJpgQuality(draft.jpgQuality);
     setSelectedCategoryPackId(draft.selectedCategoryPackId);
+    setPreviewTargetId(draft.previewTargetId);
     setSlots(draft.slots);
     setSelected(draft.selected);
   }
@@ -515,17 +528,33 @@ export default function Page() {
   }
 
   function changePlatform(key: PlatformKey) {
+    const defaultTargetId = getDefaultStoreTargetIds(key)[0];
     setPlatformKey(key);
-    setSelectedTargetIds(getDefaultStoreTargetIds(key));
+    setSelectedTargetIds([defaultTargetId]);
+    setPreviewTargetId(defaultTargetId);
     setStatus(`${platformDefs[key].label} Phone 규격`);
   }
 
   function toggleStoreTarget(targetId: StoreTargetId) {
-    setSelectedTargetIds((current) => {
-      const nextIds = current.includes(targetId) ? current.filter((id) => id !== targetId) : [...current, targetId];
-      const normalized = getStoreTargetSpecs(platformKey, nextIds).map((targetSpec) => targetSpec.id);
-      return normalized;
-    });
+    const currentIds = selectedTargetSpecs.map((targetSpec) => targetSpec.id);
+    const isSelected = currentIds.includes(targetId);
+    const nextIds = isSelected ? currentIds.filter((id) => id !== targetId) : [...currentIds, targetId];
+    const normalized = getStoreTargetSpecs(platformKey, nextIds).map((targetSpec) => targetSpec.id);
+    setSelectedTargetIds(normalized);
+    if (!isSelected) {
+      setPreviewTargetId(targetId);
+      setStatus(`${storeTargetSpecs[targetId].label} 미리보기`);
+      return;
+    }
+    if (previewTargetSpec.id === targetId) {
+      setPreviewTargetId(normalized[0]);
+      setStatus(`${storeTargetSpecs[normalized[0]].label} 미리보기`);
+    }
+  }
+
+  function selectPreviewTarget(targetId: StoreTargetId) {
+    setPreviewTargetId(targetId);
+    setStatus(`${storeTargetSpecs[targetId].label} 미리보기`);
   }
 
   function goToSlot(index: number) {
@@ -564,6 +593,13 @@ export default function Page() {
   function updateSlotTemplate(index: number, templateId: TemplateId) {
     const template = getTemplateById(templateId);
     updateSlot(index, { templateId, badge: template.badge });
+  }
+
+  function chooseSelectedSlotTemplate(templateId: TemplateId) {
+    const template = getTemplateById(templateId);
+    updateSlotTemplate(selected, templateId);
+    setIsTemplateModalOpen(false);
+    setStatus(`${String(selected + 1).padStart(2, "0")}번 ${template.label} 적용`);
   }
 
   function applyCategoryPack(packId: string) {
@@ -955,6 +991,7 @@ export default function Page() {
       version: 3,
       platformKey,
       selectedTargetIds: selectedTargetSpecs.map((targetSpec) => targetSpec.id),
+      previewTargetId: previewTargetSpec.id,
       bgMode,
       themeId,
       gradientType,
@@ -982,6 +1019,7 @@ export default function Page() {
     hideDeviceCutout,
     jpgQuality,
     platformKey,
+    previewTargetSpec.id,
     selectedTargetSpecs,
     selectedCategoryPackId,
     selected,
@@ -1070,15 +1108,28 @@ export default function Page() {
               </div>
               <div className="target-summary" aria-label="현재 내보내기 규격">
                 <span>
-                  <IconText icon="target">기본 규격</IconText>
+                  <IconText icon="target">현재 미리보기</IconText>
                 </span>
                 <div>
-                  <strong>{platform.label}</strong>
+                  <strong>{previewTargetSpec.label}</strong>
                   <small>
-                    {platform.width} x {platform.height} · {exportFileCount}개 파일
+                    {platform.width} x {platform.height} · {selectedTargetSpecs.length}개 규격 선택
                   </small>
                 </div>
                 <em>{selectedTargetSummary}</em>
+              </div>
+              <div className="target-preview-switcher" aria-label="미리보기 규격 전환">
+                {selectedTargetSpecs.map((targetSpec) => (
+                  <button
+                    key={targetSpec.id}
+                    className={targetSpec.id === previewTargetSpec.id ? "is-active" : ""}
+                    type="button"
+                    onClick={() => selectPreviewTarget(targetSpec.id)}
+                  >
+                    <span>{targetSpec.shortLabel}</span>
+                    <small>{targetSpec.platform.width}x{targetSpec.platform.height}</small>
+                  </button>
+                ))}
               </div>
               <details className="advanced-panel target-panel">
                 <summary>
@@ -1111,7 +1162,7 @@ export default function Page() {
                 </div>
               </details>
               <p className="hint">
-                <IconText icon="info">기본은 Phone ZIP.</IconText>
+                <IconText icon="info">추가 규격을 선택하면 여기서 보기를 전환합니다.</IconText>
               </p>
         </section>
 
@@ -1528,6 +1579,12 @@ export default function Page() {
                 <span className={`shot-state ${selectedBoardState}`}>{selectedStateLabel}</span>
                 <strong>{selectedIssueText}</strong>
               </div>
+              <div className="stage-target-preview" aria-label="현재 보드 미리보기 규격">
+                <span>
+                  <IconText icon="target">미리보기</IconText>
+                </span>
+                <strong>{previewTargetSummary}</strong>
+              </div>
               <div className="stage-workbar-actions" aria-label="보드 이동">
                 <button type="button" onClick={() => moveSelectedSlot(-1)}>
                   <IconText icon="arrowLeft">이전</IconText>
@@ -1582,7 +1639,10 @@ export default function Page() {
               <span>PNG/JPG를 순서대로 채웁니다.</span>
             </div>
           ) : null}
-          <div className={`stage platform-${platformKey}`} style={stageStyle}>
+          <div
+            className={`stage platform-${platformKey} device-${previewDeviceProfile.frameClass} copy-${previewDeviceProfile.copyLayout}`}
+            style={stageStyle}
+          >
             {slots.map((slot, index) => {
               const template = getTemplateById(slot.templateId);
               const readiness = slotReadiness[index];
@@ -1601,7 +1661,14 @@ export default function Page() {
                   }}
                 >
                   <div className="shot-toolbar">
-                    <button className="slot-button" type="button" onClick={() => selectSlot(index)}>
+                    <button
+                      className="slot-button"
+                      type="button"
+                      onClick={() => {
+                        selectSlot(index);
+                        setIsTemplateModalOpen(true);
+                      }}
+                    >
                       <IconText icon="image">{String(index + 1).padStart(2, "0")}번 · {template.label}</IconText>
                     </button>
                   </div>
@@ -1685,13 +1752,13 @@ export default function Page() {
                           </div>
                         ) : null}
                         <div
-                          className={`device-frame ${platform.deviceClass} ${index === selected ? "is-transform-selected" : ""}`}
+                          className={`device-frame ${previewDeviceProfile.frameClass} platform-${platformKey} ${index === selected ? "is-transform-selected" : ""}`}
                           style={createDeviceTransformStyle(slot.deviceTransform)}
                           onPointerDown={(event) => startDeviceGesture(event, index, "move")}
                           onPointerMove={updateDeviceGesture}
                           onPointerUp={endDeviceGesture}
                           onPointerCancel={endDeviceGesture}
-                        >
+                          >
                           <div className="device-screen">
                             {slot.imageDataUrl ? (
                               // User-selected data URLs are local previews, so Next image optimization is not useful here.
@@ -1701,7 +1768,7 @@ export default function Page() {
                               <div className="empty-screen">이미지를 놓으세요</div>
                             )}
                           </div>
-                          {shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
+                          {previewDeviceProfile.supportsCutout && shouldRenderDeviceCutout(hideDeviceCutout) ? <div className="device-camera" /> : null}
                           {index === selected ? (
                             <div className="device-transform-handles" aria-label="목업 직접 조정">
                               <button
@@ -2182,21 +2249,22 @@ export default function Page() {
               <IconText icon="reset">초기화</IconText>
             </button>
           </div>
-          <label className="field">
+          <div className="template-open-field">
             <span>
               <IconText icon="layout" className="pl-1">템플릿</IconText>
             </span>
-            <select
-              value={selectedSlot.templateId}
-              onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
-            >
-              {SCREENSHOT_TEMPLATES.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <button className="template-open-button" type="button" onClick={() => setIsTemplateModalOpen(true)}>
+              <span className={`template-mini mini-${selectedTemplate.family}`} aria-hidden="true">
+                <span />
+                <i />
+              </span>
+              <span>
+                <strong>{selectedTemplate.label}</strong>
+                <small>{selectedTemplate.description}</small>
+              </span>
+              <em>선택</em>
+            </button>
+          </div>
           <p className="inspector-note">
             <IconText icon="keyboard">Shift 드래그: 축 고정.</IconText>
           </p>
@@ -2314,6 +2382,84 @@ export default function Page() {
         )}
       </aside>
 
+      {isTemplateModalOpen ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsTemplateModalOpen(false)}>
+          <section
+            className="template-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="template-modal-header">
+              <div>
+                <span>
+                  <IconText icon="layout">템플릿 선택</IconText>
+                </span>
+                <h2 id="template-modal-title">
+                  {String(selected + 1).padStart(2, "0")}번 화면 배치
+                </h2>
+                <p>{previewTargetSpec.label} 기준으로 카피와 목업 위치를 미리 확인합니다.</p>
+              </div>
+              <button className="modal-close" type="button" onClick={() => setIsTemplateModalOpen(false)}>
+                닫기
+              </button>
+            </header>
+            <div className="template-modal-grid">
+              {templatePreviewOptions.map((option) => {
+                const showBadge = selectedSlot.showBadge && Boolean(selectedSlot.badge.trim());
+                const showTitle = selectedSlot.showTitle && Boolean(selectedSlot.title.trim());
+                const showSubtitle = selectedSlot.showSubtitle && Boolean(selectedSlot.subtitle.trim());
+
+                return (
+                  <button
+                    key={option.id}
+                    className={`template-choice-card layout-${option.family} copy-${previewDeviceProfile.copyLayout} device-${previewDeviceProfile.frameClass} ${option.isSelected ? "is-selected" : ""}`}
+                    type="button"
+                    aria-pressed={option.isSelected}
+                    onClick={() => chooseSelectedSlotTemplate(option.id)}
+                  >
+                    <span className="template-choice-heading">
+                      <span className={option.miniClassName} aria-hidden="true">
+                        <span />
+                        <i />
+                      </span>
+                      <span>
+                        <strong>{option.label}</strong>
+                        <small>{option.description}</small>
+                      </span>
+                    </span>
+                    <span className="template-choice-preview" style={stageStyle} aria-hidden="true">
+                      <span className="copy-block">
+                        {showBadge ? <span className="template-badge">{selectedSlot.badge}</span> : null}
+                        {showTitle ? <strong>{selectedSlot.title}</strong> : null}
+                        {showSubtitle ? <span className="copy-subtitle">{selectedSlot.subtitle}</span> : null}
+                      </span>
+                      <span className={`device-frame ${previewDeviceProfile.frameClass} platform-${platformKey}`}>
+                        <span className="device-screen">
+                          {selectedSlot.imageDataUrl ? (
+                            // User-selected data URLs are local previews, so Next image optimization is not useful here.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img alt="" src={selectedSlot.imageDataUrl} />
+                          ) : (
+                            <span className="empty-screen">선택 화면</span>
+                          )}
+                        </span>
+                        {previewDeviceProfile.supportsCutout && shouldRenderDeviceCutout(hideDeviceCutout) ? <span className="device-camera" /> : null}
+                      </span>
+                    </span>
+                    <span className="template-choice-footer">
+                      <span>{option.badge}</span>
+                      <strong>{option.isSelected ? "현재 사용 중" : "이 배치 선택"}</strong>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <div className={`toast ${toast ? "is-visible" : ""}`} role="status" aria-live="polite">
         {toast}
       </div>
@@ -2380,11 +2526,13 @@ function normalizeStoredDraft(value: unknown): PersistedDraft | null {
   }
 
   const platformKey = value.platformKey === "android" ? "android" : "ios";
+  const selectedTargetIds = normalizeStoredTargetIds(platformKey, value.selectedTargetIds);
 
   return {
     version: 3,
     platformKey,
-    selectedTargetIds: normalizeStoredTargetIds(platformKey, value.selectedTargetIds),
+    selectedTargetIds,
+    previewTargetId: normalizeStoredPreviewTargetId(platformKey, selectedTargetIds, value.previewTargetId),
     bgMode: value.bgMode === "solid" ? "solid" : "tonal",
     themeId: normalizeThemeId(value.themeId),
     gradientType: value.gradientType === "radial" ? "radial" : "linear",
@@ -2403,6 +2551,17 @@ function normalizeStoredDraft(value: unknown): PersistedDraft | null {
 function normalizeStoredTargetIds(platformKey: PlatformKey, value: unknown): StoreTargetId[] {
   const selectedIds = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   return getStoreTargetSpecs(platformKey, selectedIds).map((targetSpec) => targetSpec.id);
+}
+
+function normalizeStoredPreviewTargetId(
+  platformKey: PlatformKey,
+  selectedTargetIds: readonly StoreTargetId[],
+  value: unknown,
+): StoreTargetId {
+  const targetSpecs = getStoreTargetSpecs(platformKey, selectedTargetIds);
+  return typeof value === "string" && targetSpecs.some((targetSpec) => targetSpec.id === value)
+    ? (value as StoreTargetId)
+    : targetSpecs[0].id;
 }
 
 function normalizeStoredSlots(value: unknown) {
@@ -2699,10 +2858,18 @@ function drawBand(ctx: CanvasRenderingContext2D, layout: CanvasLayout, w: number
 }
 
 function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform: PlatformDef): CanvasLayout {
-  const compact = platform.deviceClass === "android";
-  const centered = phoneRect(w, h, platform, compact ? 0.58 : 0.56);
-  const small = phoneRect(w, h, platform, compact ? 0.52 : 0.5);
-  const large = phoneRect(w, h, platform, compact ? 0.64 : 0.62);
+  const profile = getPreviewDeviceProfile(platform);
+  if (profile.copyLayout === "wide") {
+    return getWideCanvasLayout(family, w, h, platform);
+  }
+  if (profile.copyLayout === "compact") {
+    return getCompactCanvasLayout(family, w, h, platform);
+  }
+
+  const compact = profile.copyLayout === "tablet";
+  const centered = phoneRect(w, h, platform, compact ? 0.54 : 0.56, compact ? 0.68 : 0.72);
+  const small = phoneRect(w, h, platform, compact ? 0.49 : 0.5, compact ? 0.62 : 0.66);
+  const large = phoneRect(w, h, platform, compact ? 0.59 : 0.62, compact ? 0.74 : 0.78);
 
   switch (family) {
     case "device-first":
@@ -2783,6 +2950,91 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
       return {
         text: { x: w * 0.08, y: h * 0.08, width: w * 0.84, height: h * 0.25, align: "center", maxTitleLines: 3, maxSubtitleLines: 2 },
         phone: { ...centered, x: (w - centered.width) / 2, y: h * 0.36 },
+      };
+  }
+}
+
+function getWideCanvasLayout(family: TemplateFamily, w: number, h: number, platform: PlatformDef): CanvasLayout {
+  const wideSmall = phoneRect(w, h, platform, 0.44, 0.46);
+  const wideCentered = phoneRect(w, h, platform, 0.5, 0.6);
+  const wideLarge = phoneRect(w, h, platform, 0.58, 0.66);
+
+  switch (family) {
+    case "device-first":
+      return {
+        text: { x: w * 0.12, y: h * 0.73, width: w * 0.76, height: h * 0.18, align: "center", maxTitleLines: 2, maxSubtitleLines: 2 },
+        phone: { ...wideCentered, x: (w - wideCentered.width) / 2, y: h * 0.12 },
+      };
+    case "split-left":
+      return {
+        text: { x: w * 0.57, y: h * 0.18, width: w * 0.34, height: h * 0.42, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...wideSmall, x: w * 0.07, y: h * 0.24 },
+      };
+    case "bottom-band":
+    case "poster-stack":
+      return {
+        text: { x: w * 0.12, y: h * 0.76, width: w * 0.76, height: h * 0.17, align: "center", maxTitleLines: 2, maxSubtitleLines: 2 },
+        phone: { ...wideCentered, x: (w - wideCentered.width) / 2, y: h * 0.12 },
+        band: "bottom",
+      };
+    case "top-band":
+    case "gallery-wall":
+      return {
+        text: { x: w * 0.12, y: h * 0.06, width: w * 0.76, height: h * 0.17, align: "center", maxTitleLines: 2, maxSubtitleLines: 2 },
+        phone: { ...wideCentered, x: (w - wideCentered.width) / 2, y: h * 0.34 },
+        band: family === "top-band" ? "top" : undefined,
+      };
+    case "diagonal":
+    case "isometric":
+      return {
+        text: { x: w * 0.07, y: h * 0.14, width: w * 0.36, height: h * 0.44, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...wideSmall, x: w * 0.48, y: h * 0.25, rotate: family === "isometric" ? -10 : -5 },
+      };
+    case "fake-3d":
+    case "floating-stack":
+    case "dashboard-grid":
+      return {
+        text: { x: w * 0.07, y: h * 0.14, width: w * 0.37, height: h * 0.42, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...wideSmall, x: w * 0.49, y: h * 0.31, rotate: family === "fake-3d" ? 2 : family === "floating-stack" ? 4 : 0 },
+      };
+    case "corner-focus":
+      return {
+        text: { x: w * 0.07, y: h * 0.12, width: w * 0.42, height: h * 0.4, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...wideLarge, x: w * 0.42, y: h * 0.29 },
+      };
+    case "split-right":
+    case "side-note":
+    case "hero-center":
+    default:
+      return {
+        text: { x: w * 0.07, y: h * 0.16, width: w * 0.36, height: h * 0.44, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...wideSmall, x: w * 0.49, y: h * 0.24 },
+      };
+  }
+}
+
+function getCompactCanvasLayout(family: TemplateFamily, w: number, h: number, platform: PlatformDef): CanvasLayout {
+  const centered = phoneRect(w, h, platform, 0.43, 0.54);
+  const small = phoneRect(w, h, platform, 0.38, 0.48);
+
+  switch (family) {
+    case "device-first":
+    case "top-band":
+      return {
+        text: { x: w * 0.09, y: h * 0.08, width: w * 0.82, height: h * 0.28, align: "center", maxTitleLines: 2, maxSubtitleLines: 1 },
+        phone: { ...small, x: (w - small.width) / 2, y: h * 0.48 },
+      };
+    case "bottom-band":
+    case "poster-stack":
+      return {
+        text: { x: w * 0.09, y: h * 0.72, width: w * 0.82, height: h * 0.2, align: "center", maxTitleLines: 2, maxSubtitleLines: 1 },
+        phone: { ...small, x: (w - small.width) / 2, y: h * 0.22 },
+        band: "bottom",
+      };
+    default:
+      return {
+        text: { x: w * 0.09, y: h * 0.08, width: w * 0.82, height: h * 0.27, align: "center", maxTitleLines: 2, maxSubtitleLines: 1 },
+        phone: { ...centered, x: (w - centered.width) / 2, y: h * 0.42, rotate: family === "diagonal" ? -6 : family === "fake-3d" ? 3 : 0 },
       };
   }
 }
@@ -2904,15 +3156,27 @@ function drawDepthCard(
   ctx.stroke();
 }
 
-function phoneRect(w: number, h: number, platform: PlatformDef, heightRatio: number): Rect {
-  const phoneH = h * heightRatio;
-  const phoneW = phoneH * (platform.deviceClass === "ios" ? IPHONE_17_PRO_DEVICE.aspectRatio : 0.51);
+function phoneRect(w: number, h: number, platform: PlatformDef, heightRatio: number, maxWidthRatio = 0.72): Rect {
+  const profile = getPreviewDeviceProfile(platform);
+  const aspectRatio = getRatioValue(profile.deviceRatio);
+  let phoneH = h * heightRatio;
+  let phoneW = phoneH * aspectRatio;
+  const maxWidth = w * maxWidthRatio;
+  if (phoneW > maxWidth) {
+    phoneW = maxWidth;
+    phoneH = phoneW / aspectRatio;
+  }
   return {
     x: (w - phoneW) / 2,
     y: (h - phoneH) / 2,
     width: phoneW,
     height: phoneH,
   };
+}
+
+function getRatioValue(ratio: string) {
+  const [width, height] = ratio.split("/").map((part) => Number(part.trim()));
+  return width > 0 && height > 0 ? width / height : IPHONE_17_PRO_DEVICE.aspectRatio;
 }
 
 async function drawPhone(
@@ -2922,7 +3186,15 @@ async function drawPhone(
   dataUrl: string,
   hideDeviceCutout: boolean,
 ) {
-  const r = rect.width * (platform.deviceClass === "ios" ? 0.12 : 0.09);
+  const profile = getPreviewDeviceProfile(platform);
+  const r =
+    profile.frameClass === "watch"
+      ? rect.width * 0.24
+      : profile.frameClass === "tv"
+      ? rect.width * 0.035
+      : profile.frameClass === "tablet"
+      ? rect.width * 0.055
+      : rect.width * (platform.storeSlug === "app-store" ? 0.12 : 0.09);
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.38)";
   ctx.shadowBlur = rect.width * 0.075;
@@ -2937,7 +3209,22 @@ async function drawPhone(
   ctx.fill();
   ctx.restore();
 
-  const pad = rect.width * (platform.deviceClass === "ios" ? 0.027 : 0.04);
+  if (profile.frameClass === "tv") {
+    ctx.save();
+    ctx.fillStyle = "#111111";
+    roundRect(ctx, rect.x + rect.width * 0.35, rect.y + rect.height * 0.99, rect.width * 0.3, rect.height * 0.05, rect.height * 0.03);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const pad =
+    profile.frameClass === "watch"
+      ? rect.width * 0.058
+      : profile.frameClass === "tv"
+      ? rect.width * 0.014
+      : profile.frameClass === "tablet"
+      ? rect.width * 0.018
+      : rect.width * (platform.storeSlug === "app-store" ? 0.027 : 0.04);
   const screen = {
     x: rect.x + pad,
     y: rect.y + pad,
@@ -2958,10 +3245,10 @@ async function drawPhone(
   }
   ctx.restore();
 
-  if (shouldRenderDeviceCutout(hideDeviceCutout)) {
+  if (profile.supportsCutout && shouldRenderDeviceCutout(hideDeviceCutout)) {
     ctx.save();
     ctx.fillStyle = "#050505";
-    if (platform.deviceClass === "ios") {
+    if (platform.storeSlug === "app-store") {
       const islandW = rect.width * 0.28;
       const islandH = rect.height * 0.033;
       roundRect(ctx, rect.x + rect.width / 2 - islandW / 2, rect.y + rect.height * 0.045, islandW, islandH, islandH / 2);
@@ -3031,10 +3318,16 @@ function drawTextGroup(
     return;
   }
 
-  const ios = platform.deviceClass === "ios";
-  const titleSize = Math.round(platform.width * (ios ? 0.086 : 0.072));
-  const subtitleSize = Math.round(platform.width * (ios ? 0.038 : 0.032));
-  const badgeSize = Math.round(platform.width * (ios ? 0.034 : 0.03));
+  const profile = getPreviewDeviceProfile(platform);
+  const titleScale =
+    profile.copyLayout === "wide" ? 0.052 : profile.copyLayout === "compact" ? 0.08 : profile.copyLayout === "tablet" ? 0.074 : 0.086;
+  const subtitleScale =
+    profile.copyLayout === "wide" ? 0.024 : profile.copyLayout === "compact" ? 0.04 : profile.copyLayout === "tablet" ? 0.034 : 0.038;
+  const badgeScale =
+    profile.copyLayout === "wide" ? 0.022 : profile.copyLayout === "compact" ? 0.034 : profile.copyLayout === "tablet" ? 0.03 : 0.034;
+  const titleSize = Math.round(platform.width * titleScale);
+  const subtitleSize = Math.round(platform.width * subtitleScale);
+  const badgeSize = Math.round(platform.width * badgeScale);
   const lineHeight = Math.round(titleSize * 1.08);
   const textX = rect.align === "center" ? rect.x + rect.width / 2 : rect.align === "right" ? rect.x + rect.width : rect.x;
   let textY = rect.y;
