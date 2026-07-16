@@ -2473,6 +2473,11 @@ textarea:focus-visible,
   padding: 20px 18px;
 }
 
+.inspector:has(.intake-sticky) {
+  display: flex;
+  flex-direction: column;
+}
+
 .inspector-sticky {
   position: sticky;
   z-index: 12;
@@ -2652,6 +2657,9 @@ textarea:focus-visible,
 .intake-workflow {
   display: grid;
   gap: 12px;
+  margin-bottom: 32px;
+  position: relative;
+  top: 12px;
 }
 
 .intake-step-list {
