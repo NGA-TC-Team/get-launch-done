@@ -3,6 +3,7 @@ export type StoreTargetCategory = "phone" | "tablet" | "tv" | "watch";
 export type PreviewDeviceClass = "phone" | "tablet" | "tv" | "watch";
 export type PreviewCopyLayout = "phone" | "tablet" | "wide" | "compact";
 export type StoreRenderMode = "composed" | "raw-interface";
+export type PreviewTargetGroupId = "phone" | "tablet" | "other";
 export type StoreTargetId =
   | "ios-phone-69"
   | "ios-tablet-13"
@@ -48,6 +49,12 @@ export type StoreTargetSpec = {
   platform: PlatformDef;
 };
 
+export type PreviewTargetGroup = {
+  id: PreviewTargetGroupId;
+  label: string;
+  specs: StoreTargetSpec[];
+};
+
 export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
   "ios-phone-69": {
     id: "ios-phone-69",
@@ -77,7 +84,7 @@ export const storeTargetSpecs: Record<StoreTargetId, StoreTargetSpec> = {
     platformKey: "ios",
     category: "tablet",
     label: "iPad 13",
-    shortLabel: "Tablet",
+    shortLabel: "iPad",
     description: "iPad 지원 앱용 13인치 App Store 규격",
     requirement: "iPad 실행 앱 필수: 2064 x 2752",
     folderName: "ipad-13",
@@ -264,6 +271,48 @@ export function getPreviewTargetSpec(
 ): StoreTargetSpec {
   const specs = getStoreTargetSpecs(platformKey, selectedTargetIds);
   return specs.find((targetSpec) => targetSpec.id === previewTargetId) ?? specs[0];
+}
+
+export function toggleStoreTargetSelection({
+  platformKey,
+  selectedTargetIds,
+  previewTargetId,
+  targetId,
+}: {
+  platformKey: PlatformKey;
+  selectedTargetIds: readonly StoreTargetId[];
+  previewTargetId: StoreTargetId;
+  targetId: StoreTargetId;
+}): { selectedTargetIds: StoreTargetId[]; previewTargetId: StoreTargetId } {
+  const currentIds = getStoreTargetSpecs(platformKey, selectedTargetIds).map((targetSpec) => targetSpec.id);
+  const isSelected = currentIds.includes(targetId);
+  const requestedIds = isSelected ? currentIds.filter((id) => id !== targetId) : [...currentIds, targetId];
+  const normalizedIds = getStoreTargetSpecs(platformKey, requestedIds).map((targetSpec) => targetSpec.id);
+
+  return {
+    selectedTargetIds: normalizedIds,
+    previewTargetId: normalizedIds.includes(previewTargetId) ? previewTargetId : normalizedIds[0],
+  };
+}
+
+export function getPreviewTargetGroups(targetSpecs: readonly StoreTargetSpec[]): PreviewTargetGroup[] {
+  const phoneSpecs = targetSpecs.filter((targetSpec) => targetSpec.category === "phone");
+  const tabletSpecs = targetSpecs.filter((targetSpec) => targetSpec.category === "tablet");
+  const otherSpecs = targetSpecs.filter(
+    (targetSpec) => targetSpec.category !== "phone" && targetSpec.category !== "tablet",
+  );
+
+  return [
+    phoneSpecs.length ? { id: "phone", label: "Phone", specs: phoneSpecs } : null,
+    tabletSpecs.length
+      ? {
+          id: "tablet",
+          label: tabletSpecs.every((targetSpec) => targetSpec.platformKey === "ios") ? "iPad" : "Tablet",
+          specs: tabletSpecs,
+        }
+      : null,
+    otherSpecs.length ? { id: "other", label: "기타", specs: otherSpecs } : null,
+  ].filter((group): group is PreviewTargetGroup => Boolean(group));
 }
 
 export function getPreviewDeviceProfile(platform: PlatformDef): PreviewDeviceProfile {

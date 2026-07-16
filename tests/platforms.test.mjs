@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   getDefaultStoreTargetIds,
+  getPreviewTargetGroups,
   getPreviewDeviceProfile,
   getPreviewTargetSpec,
   getStoreTargetSpecs,
+  toggleStoreTargetSelection,
   platformDefs,
   storeTargetSpecs,
 } from "../src/app/platforms";
@@ -38,6 +40,7 @@ describe("platform definitions", () => {
 
   test("스토어 규격은 tablet, TV, wearable 산출물 정보를 포함한다", () => {
     expect(storeTargetSpecs["ios-tablet-13"].platform.sizeLabel).toContain("2064 x 2752");
+    expect(storeTargetSpecs["ios-tablet-13"].shortLabel).toBe("iPad");
     expect(storeTargetSpecs["ios-tv"].platform.sizeLabel).toContain("1920 x 1080");
     expect(storeTargetSpecs["ios-watch"].platform.sizeLabel).toContain("422 x 514");
     expect(storeTargetSpecs["android-tablet"].platform.sizeLabel).toContain("1920 x 1080");
@@ -57,6 +60,42 @@ describe("platform definitions", () => {
     const preview = getPreviewTargetSpec("android", ["android-phone", "android-tablet"], "android-tv");
 
     expect(preview.id).toBe("android-phone");
+  });
+
+  test("추가 규격을 선택해도 현재 phone 미리보기는 자동으로 iPad로 바뀌지 않는다", () => {
+    const next = toggleStoreTargetSelection({
+      platformKey: "ios",
+      selectedTargetIds: ["ios-phone-69"],
+      previewTargetId: "ios-phone-69",
+      targetId: "ios-tablet-13",
+    });
+
+    expect(next.selectedTargetIds).toEqual(["ios-phone-69", "ios-tablet-13"]);
+    expect(next.previewTargetId).toBe("ios-phone-69");
+  });
+
+  test("현재 미리보기 규격을 해제하면 남아 있는 첫 규격으로 미리보기를 되돌린다", () => {
+    const next = toggleStoreTargetSelection({
+      platformKey: "ios",
+      selectedTargetIds: ["ios-phone-69", "ios-tablet-13"],
+      previewTargetId: "ios-tablet-13",
+      targetId: "ios-tablet-13",
+    });
+
+    expect(next.selectedTargetIds).toEqual(["ios-phone-69"]);
+    expect(next.previewTargetId).toBe("ios-phone-69");
+  });
+
+  test("미리보기 전환 탭은 phone과 pad/tablet 그룹을 분리한다", () => {
+    const groups = getPreviewTargetGroups(
+      getStoreTargetSpecs("ios", ["ios-phone-69", "ios-tablet-13", "ios-tv"]),
+    );
+
+    expect(groups.map((group) => [group.id, group.label, group.specs.map((targetSpec) => targetSpec.id)])).toEqual([
+      ["phone", "Phone", ["ios-phone-69"]],
+      ["tablet", "iPad", ["ios-tablet-13"]],
+      ["other", "기타", ["ios-tv"]],
+    ]);
   });
 
   test("phone, tablet, TV, watch는 서로 다른 목업/카피 배치 프로파일을 가진다", () => {

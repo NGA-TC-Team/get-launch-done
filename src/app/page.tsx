@@ -37,12 +37,14 @@ import type { GradientConfig, GradientStop, GradientType } from "./gradients";
 import { getExportTargets } from "./export-targets";
 import {
   getDefaultStoreTargetIds,
+  getPreviewTargetGroups,
   getPreviewDeviceProfile,
   getPreviewTargetSpec,
   getStoreTargetSpecs,
   platformDefs,
   storeTargetOrder,
   storeTargetSpecs,
+  toggleStoreTargetSelection,
 } from "./platforms";
 import type { PlatformDef, PlatformKey, StoreTargetId, StoreTargetSpec } from "./platforms";
 import { buildPromptForSlot, buildPromptForSlots, parsePromptJson } from "./prompt-copy";
@@ -362,6 +364,7 @@ export default function Page() {
     () => new Set(selectedTargetSpecs.map((targetSpec) => targetSpec.id)),
     [selectedTargetSpecs],
   );
+  const previewTargetGroups = useMemo(() => getPreviewTargetGroups(selectedTargetSpecs), [selectedTargetSpecs]);
   const previewTargetSpec = getPreviewTargetSpec(platformKey, selectedTargetIds, previewTargetId);
   const previewDeviceProfile = getPreviewDeviceProfile(previewTargetSpec.platform);
   const platform = previewTargetSpec.platform;
@@ -536,20 +539,15 @@ export default function Page() {
   }
 
   function toggleStoreTarget(targetId: StoreTargetId) {
-    const currentIds = selectedTargetSpecs.map((targetSpec) => targetSpec.id);
-    const isSelected = currentIds.includes(targetId);
-    const nextIds = isSelected ? currentIds.filter((id) => id !== targetId) : [...currentIds, targetId];
-    const normalized = getStoreTargetSpecs(platformKey, nextIds).map((targetSpec) => targetSpec.id);
-    setSelectedTargetIds(normalized);
-    if (!isSelected) {
-      setPreviewTargetId(targetId);
-      setStatus(`${storeTargetSpecs[targetId].label} 미리보기`);
-      return;
-    }
-    if (previewTargetSpec.id === targetId) {
-      setPreviewTargetId(normalized[0]);
-      setStatus(`${storeTargetSpecs[normalized[0]].label} 미리보기`);
-    }
+    const next = toggleStoreTargetSelection({
+      platformKey,
+      selectedTargetIds: selectedTargetSpecs.map((targetSpec) => targetSpec.id),
+      previewTargetId: previewTargetSpec.id,
+      targetId,
+    });
+    setSelectedTargetIds(next.selectedTargetIds);
+    setPreviewTargetId(next.previewTargetId);
+    setStatus(`${storeTargetSpecs[targetId].label} ${selectedTargetIdSet.has(targetId) ? "해제" : "추가"}`);
   }
 
   function selectPreviewTarget(targetId: StoreTargetId) {
@@ -1119,16 +1117,23 @@ export default function Page() {
                 <em>{selectedTargetSummary}</em>
               </div>
               <div className="target-preview-switcher" aria-label="미리보기 규격 전환">
-                {selectedTargetSpecs.map((targetSpec) => (
-                  <button
-                    key={targetSpec.id}
-                    className={targetSpec.id === previewTargetSpec.id ? "is-active" : ""}
-                    type="button"
-                    onClick={() => selectPreviewTarget(targetSpec.id)}
-                  >
-                    <span>{targetSpec.shortLabel}</span>
-                    <small>{targetSpec.platform.width}x{targetSpec.platform.height}</small>
-                  </button>
+                {previewTargetGroups.map((group) => (
+                  <div className="target-preview-group" key={group.id}>
+                    <span className="target-preview-group-label">{group.label}</span>
+                    <div className="target-preview-tabs" role="group" aria-label={`${group.label} 미리보기`}>
+                      {group.specs.map((targetSpec) => (
+                        <button
+                          key={targetSpec.id}
+                          className={targetSpec.id === previewTargetSpec.id ? "is-active" : ""}
+                          type="button"
+                          onClick={() => selectPreviewTarget(targetSpec.id)}
+                        >
+                          <span>{targetSpec.shortLabel}</span>
+                          <small>{targetSpec.platform.width}x{targetSpec.platform.height}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
               <details className="advanced-panel target-panel">
@@ -1162,7 +1167,7 @@ export default function Page() {
                 </div>
               </details>
               <p className="hint">
-                <IconText icon="info">추가 규격을 선택하면 여기서 보기를 전환합니다.</IconText>
+                <IconText icon="info">추가 규격은 내보내기 대상, 위 탭은 미리보기 전환.</IconText>
               </p>
         </section>
 
