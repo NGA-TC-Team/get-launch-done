@@ -46,14 +46,18 @@ import type { PlatformDef, PlatformKey, StoreTargetId, StoreTargetSpec } from ".
 import { buildPromptForSlot, buildPromptForSlots, parsePromptJson } from "./prompt-copy";
 import {
   DEFAULT_COPY,
+  DEFAULT_CATEGORY_PACK_ID,
   DEFAULT_TEMPLATE_SEQUENCE,
   IPHONE_17_PRO_DEVICE,
+  SCREENSHOT_CATEGORY_GROUPS,
+  SCREENSHOT_CATEGORY_PACKS,
   SCREENSHOT_THEMES,
   SCREENSHOT_TEMPLATES,
+  getCategoryPackById,
   getTemplateById,
   getThemeById,
 } from "./templates";
-import type { ScreenshotTemplate, ScreenshotTheme, TemplateFamily, TemplateId, ThemeId } from "./templates";
+import type { CategoryId, ScreenshotCategoryPack, ScreenshotTemplate, ScreenshotTheme, TemplateFamily, TemplateId, ThemeId } from "./templates";
 import { applyLoadedImagesToSlots } from "./slot-images";
 import { getNextIssueIndex, getVisibleIssues } from "./workflow";
 import type { InspectorMode, SlotReadiness, SlotIssue } from "./workflow";
@@ -184,7 +188,7 @@ function IconText({
   return (
     <span className={`icon-text ${className}`.trim()}>
       <Icon name={icon} />
-      <span>{children}</span>
+      <span className="icon-text-label">{children}</span>
     </span>
   );
 }
@@ -216,6 +220,7 @@ type PersistedDraft = {
   hideDeviceCutout: boolean;
   exportFormat: ExportFormat;
   jpgQuality: number;
+  selectedCategoryPackId: string;
   selected: number;
   slots: Slot[];
 };
@@ -228,8 +233,10 @@ function createGradientStops(a: string, b: string): GradientStop[] {
 }
 
 function createInitialSlots(): Slot[] {
+  const defaultPack = getCategoryPackById(DEFAULT_CATEGORY_PACK_ID);
+
   return Array.from({ length: TOTAL_SLOTS }, (_, index) => {
-    const templateId = DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length];
+    const templateId = defaultPack.templateIds[index % defaultPack.templateIds.length];
     const template = getTemplateById(templateId);
 
     return {
@@ -293,6 +300,20 @@ function formatPageRange(startIndex: number, count: number) {
   return count === 1 ? `${start}번` : `${start}~${end}번`;
 }
 
+function getPackShortLabel(pack: ScreenshotCategoryPack) {
+  return pack.label.includes(" · ") ? pack.label.split(" · ").at(-1) ?? pack.label : pack.label;
+}
+
+function getCategorySourceLabel(source: "apple" | "google" | "both") {
+  if (source === "apple") {
+    return "Apple";
+  }
+  if (source === "google") {
+    return "Google";
+  }
+  return "공통";
+}
+
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -313,6 +334,7 @@ export default function Page() {
   const [gradientHexDrafts, setGradientHexDrafts] = useState<Record<string, string>>({});
   const [hideDeviceCutout, setHideDeviceCutout] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [selectedCategoryPackId, setSelectedCategoryPackId] = useState(DEFAULT_CATEGORY_PACK_ID);
   const [selected, setSelected] = useState(0);
   const [inspectorMode, setInspectorMode] = useState<InspectorMode>("copy");
   const [jpgQuality, setJpgQuality] = useState(0.92);
@@ -336,6 +358,11 @@ export default function Page() {
   );
   const platform = selectedTargetSpecs[0]?.platform ?? platformDefs[platformKey];
   const theme = getThemeById(themeId);
+  const selectedCategoryPack = getCategoryPackById(selectedCategoryPackId);
+  const selectedCategory =
+    SCREENSHOT_CATEGORY_GROUPS.find((category) => category.id === selectedCategoryPack.categoryId) ??
+    SCREENSHOT_CATEGORY_GROUPS[0];
+  const categoryPacks = SCREENSHOT_CATEGORY_PACKS.filter((pack) => pack.categoryId === selectedCategory.id);
   const selectedSlot = slots[selected];
   const selectedTemplate = getTemplateById(selectedSlot.templateId);
   const slotReadiness = slots.map(getSlotReadiness);
@@ -472,6 +499,7 @@ export default function Page() {
     setHideDeviceCutout(draft.hideDeviceCutout);
     setExportFormat(draft.exportFormat);
     setJpgQuality(draft.jpgQuality);
+    setSelectedCategoryPackId(draft.selectedCategoryPackId);
     setSlots(draft.slots);
     setSelected(draft.selected);
   }
@@ -538,10 +566,21 @@ export default function Page() {
     updateSlot(index, { templateId, badge: template.badge });
   }
 
-  function applyTemplateToAll(templateId: TemplateId) {
-    const template = getTemplateById(templateId);
-    setSlots((current) => current.map((slot) => ({ ...slot, templateId, badge: template.badge })));
-    setStatus("템플릿 전체 적용.");
+  function applyCategoryPack(packId: string) {
+    const pack = getCategoryPackById(packId);
+    setSelectedCategoryPackId(pack.id);
+    setSlots((current) =>
+      current.map((slot, index) => {
+        const template = getTemplateById(pack.templateIds[index % pack.templateIds.length]);
+        return { ...slot, templateId: template.id, badge: template.badge };
+      }),
+    );
+    setStatus(`${pack.label} 적용.`);
+  }
+
+  function changeCategory(categoryId: CategoryId) {
+    const nextPack = SCREENSHOT_CATEGORY_PACKS.find((pack) => pack.categoryId === categoryId) ?? selectedCategoryPack;
+    applyCategoryPack(nextPack.id);
   }
 
   function setAllTextVisibility(key: TextVisibilityKey, visible: boolean) {
@@ -629,10 +668,10 @@ export default function Page() {
     setSlots((current) =>
       current.map((slot, index) => ({
         ...slot,
-        badge: getTemplateById(DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length]).badge,
+        badge: getTemplateById(selectedCategoryPack.templateIds[index % selectedCategoryPack.templateIds.length]).badge,
         title: DEFAULT_COPY[index][0],
         subtitle: DEFAULT_COPY[index][1],
-        templateId: DEFAULT_TEMPLATE_SEQUENCE[index % DEFAULT_TEMPLATE_SEQUENCE.length],
+        templateId: selectedCategoryPack.templateIds[index % selectedCategoryPack.templateIds.length],
         showBadge: true,
         showTitle: true,
         showSubtitle: true,
@@ -925,6 +964,7 @@ export default function Page() {
       hideDeviceCutout,
       exportFormat,
       jpgQuality,
+      selectedCategoryPackId,
       selected,
       slots,
     };
@@ -943,6 +983,7 @@ export default function Page() {
     jpgQuality,
     platformKey,
     selectedTargetSpecs,
+    selectedCategoryPackId,
     selected,
     slots,
     themeId,
@@ -1104,42 +1145,67 @@ export default function Page() {
                 <summary>
                   <span>
                     <Icon name="layout" />
-                    템플릿
+                    카테고리 템플릿
                   </span>
-                  <strong>{selectedTemplate.label}</strong>
+                  <strong>{selectedCategoryPack.label}</strong>
                 </summary>
                 <label className="field template-picker">
                   <span>
-                    <IconText icon="layout" className="pl-1">선택 화면 템플릿</IconText>
+                    <IconText icon="store" className="pl-1">앱 카테고리</IconText>
                   </span>
                   <select
-                    value={selectedSlot.templateId}
-                    onChange={(event) => updateSlotTemplate(selected, event.target.value as TemplateId)}
+                    value={selectedCategory.id}
+                    onChange={(event) => changeCategory(event.target.value as CategoryId)}
                   >
-                    {SCREENSHOT_TEMPLATES.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.label}
+                    {SCREENSHOT_CATEGORY_GROUPS.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.label}
                       </option>
                     ))}
                   </select>
                 </label>
-                <div className="template-summary" aria-label="현재 템플릿 요약">
-                  <span className={`template-mini mini-${selectedTemplate.family}`} aria-hidden="true">
+                <label className="field template-picker">
+                  <span>
+                    <IconText icon="layers" className="pl-1">전체 페이지 팩</IconText>
+                  </span>
+                  <select
+                    value={selectedCategoryPack.id}
+                    onChange={(event) => applyCategoryPack(event.target.value)}
+                  >
+                    {categoryPacks.map((pack) => (
+                      <option key={pack.id} value={pack.id}>
+                        {getPackShortLabel(pack)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="template-summary" aria-label="현재 카테고리 팩 요약">
+                  <span className={`template-mini mini-${getTemplateById(selectedCategoryPack.templateIds[0]).family}`} aria-hidden="true">
                     <span />
                     <i />
                   </span>
                   <div>
-                    <strong>{selectedTemplate.label}</strong>
-                    <p>{selectedTemplate.description}</p>
+                    <strong>{selectedCategoryPack.label}</strong>
+                    <p>{selectedCategoryPack.description}</p>
                   </div>
-                  <em>{selectedTemplate.badge}</em>
+                  <em>{getCategorySourceLabel(selectedCategory.source)}</em>
                 </div>
-                <button className="secondary-action compact-full" type="button" onClick={() => applyTemplateToAll(selectedTemplate.id)}>
-                  <IconText icon="layers">전체 적용</IconText>
+                <div className="template-pack-strip" aria-label="팩 화면 구성">
+                  {selectedCategoryPack.templateIds.map((templateId, index) => {
+                    const template = getTemplateById(templateId);
+                    return (
+                      <span key={`${templateId}-${index}`} title={`${index + 1}. ${template.label}`}>
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                    );
+                  })}
+                </div>
+                <button className="secondary-action compact-full" type="button" onClick={() => applyCategoryPack(selectedCategoryPack.id)}>
+                  <IconText icon="layers">팩 다시 적용</IconText>
                 </button>
               </details>
               <p className="hint">
-                <IconText icon="info">세부 편집은 오른쪽에서.</IconText>
+                <IconText icon="info">화면별 세부 편집은 오른쪽에서.</IconText>
               </p>
         </section>
 
@@ -2328,6 +2394,7 @@ function normalizeStoredDraft(value: unknown): PersistedDraft | null {
     hideDeviceCutout: value.hideDeviceCutout === true,
     exportFormat: value.exportFormat === "jpg" ? "jpg" : "png",
     jpgQuality: typeof value.jpgQuality === "number" ? Math.min(1, Math.max(0.72, value.jpgQuality)) : 0.92,
+    selectedCategoryPackId: normalizeCategoryPackId(value.selectedCategoryPackId),
     selected: normalizeSelectedIndex(value.selected),
     slots: normalizeStoredSlots(value.slots),
   };
@@ -2403,6 +2470,12 @@ function normalizeTemplateId(value: unknown): TemplateId {
   return typeof value === "string" && SCREENSHOT_TEMPLATES.some((template) => template.id === value)
     ? (value as TemplateId)
     : DEFAULT_TEMPLATE_SEQUENCE[0];
+}
+
+function normalizeCategoryPackId(value: unknown) {
+  return typeof value === "string" && SCREENSHOT_CATEGORY_PACKS.some((pack) => pack.id === value)
+    ? value
+    : DEFAULT_CATEGORY_PACK_ID;
 }
 
 function normalizeSelectedIndex(value: unknown) {
@@ -2558,6 +2631,7 @@ async function drawTemplate(
 
   drawBand(ctx, layout, w, h, theme);
   drawFrameLines(ctx, w, h, theme);
+  drawLayoutDepth(ctx, template.family, layout, w, h, theme);
 
   const phone = layout.phone;
   await drawTransformedPhone(ctx, phone, platform, slot.imageDataUrl, hideDeviceCutout, slot.deviceTransform, phone.rotate ?? 0);
@@ -2679,6 +2753,31 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
         phone: { ...centered, x: (w - centered.width) / 2, y: h * 0.16 },
         band: "bottom",
       };
+    case "isometric":
+      return {
+        text: { x: w * 0.08, y: h * 0.08, width: w * 0.72, height: h * 0.24, align: "left", maxTitleLines: 3, maxSubtitleLines: 2 },
+        phone: { ...centered, x: (w - centered.width) / 2 + w * 0.09, y: h * 0.34, rotate: -16 },
+      };
+    case "fake-3d":
+      return {
+        text: { x: w * 0.08, y: h * 0.74, width: w * 0.84, height: h * 0.18, align: "center", maxTitleLines: 2, maxSubtitleLines: 2 },
+        phone: { ...small, x: (w - small.width) / 2 + w * 0.04, y: h * 0.12, rotate: 3 },
+      };
+    case "floating-stack":
+      return {
+        text: { x: w * 0.08, y: h * 0.1, width: w * 0.56, height: h * 0.32, align: "left", maxTitleLines: 3, maxSubtitleLines: 3 },
+        phone: { ...small, x: w * 0.45, y: h * 0.31, rotate: 5 },
+      };
+    case "gallery-wall":
+      return {
+        text: { x: w * 0.08, y: h * 0.09, width: w * 0.84, height: h * 0.22, align: "center", maxTitleLines: 3, maxSubtitleLines: 2 },
+        phone: { ...small, x: (w - small.width) / 2, y: h * 0.36 },
+      };
+    case "dashboard-grid":
+      return {
+        text: { x: w * 0.08, y: h * 0.08, width: w * 0.84, height: h * 0.22, align: "left", maxTitleLines: 3, maxSubtitleLines: 2 },
+        phone: { ...small, x: (w - small.width) / 2 + w * 0.13, y: h * 0.33 },
+      };
     case "hero-center":
     default:
       return {
@@ -2686,6 +2785,123 @@ function getCanvasLayout(family: TemplateFamily, w: number, h: number, platform:
         phone: { ...centered, x: (w - centered.width) / 2, y: h * 0.36 },
       };
   }
+}
+
+function drawLayoutDepth(
+  ctx: CanvasRenderingContext2D,
+  family: TemplateFamily,
+  layout: CanvasLayout,
+  w: number,
+  h: number,
+  theme: ScreenshotTheme,
+) {
+  switch (family) {
+    case "isometric":
+      drawIsometricDepth(ctx, layout.phone, theme);
+      break;
+    case "fake-3d":
+      drawFake3dDepth(ctx, layout.phone, theme);
+      break;
+    case "floating-stack":
+      drawFloatingStackDepth(ctx, w, h, theme);
+      break;
+    case "gallery-wall":
+      drawGalleryWallDepth(ctx, w, h, theme);
+      break;
+    case "dashboard-grid":
+      drawDashboardGridDepth(ctx, w, h, theme);
+      break;
+    default:
+      break;
+  }
+}
+
+function drawIsometricDepth(ctx: CanvasRenderingContext2D, phone: Rect, theme: ScreenshotTheme) {
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = theme.foreground;
+  ctx.beginPath();
+  ctx.ellipse(
+    phone.x + phone.width * 0.5,
+    phone.y + phone.height * 0.96,
+    phone.width * 0.78,
+    phone.height * 0.12,
+    -0.18,
+    0,
+    Math.PI * 2,
+  );
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFake3dDepth(ctx: CanvasRenderingContext2D, phone: Rect, theme: ScreenshotTheme) {
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.strokeStyle = theme.foreground;
+  ctx.fillStyle = theme.panel;
+  const radius = phone.width * 0.12;
+  for (const offset of [0.2, 0.1]) {
+    const x = phone.x - phone.width * offset;
+    const y = phone.y + phone.height * offset * 0.55;
+    drawDepthCard(ctx, x, y, phone.width, phone.height, radius);
+  }
+  ctx.restore();
+}
+
+function drawFloatingStackDepth(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {
+  ctx.save();
+  ctx.fillStyle = theme.panel;
+  ctx.strokeStyle = theme.foreground;
+  ctx.globalAlpha = 0.2;
+  drawDepthCard(ctx, w * 0.09, h * 0.67, w * 0.34, h * 0.2, 18);
+  ctx.globalAlpha = 0.16;
+  drawDepthCard(ctx, w * 0.18, h * 0.55, w * 0.28, h * 0.14, 16);
+  ctx.globalAlpha = 0.12;
+  drawDepthCard(ctx, w * 0.58, h * 0.18, w * 0.24, h * 0.12, 16);
+  ctx.restore();
+}
+
+function drawGalleryWallDepth(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {
+  ctx.save();
+  ctx.fillStyle = theme.panel;
+  ctx.strokeStyle = theme.foreground;
+  ctx.globalAlpha = 0.18;
+  drawDepthCard(ctx, w * 0.09, h * 0.39, w * 0.22, h * 0.16, 18);
+  drawDepthCard(ctx, w * 0.68, h * 0.59, w * 0.23, h * 0.17, 18);
+  ctx.globalAlpha = 0.12;
+  drawDepthCard(ctx, w * 0.13, h * 0.75, w * 0.2, h * 0.12, 16);
+  ctx.restore();
+}
+
+function drawDashboardGridDepth(ctx: CanvasRenderingContext2D, w: number, h: number, theme: ScreenshotTheme) {
+  ctx.save();
+  ctx.fillStyle = theme.panel;
+  ctx.strokeStyle = theme.foreground;
+  ctx.globalAlpha = 0.22;
+  const x = w * 0.08;
+  const y = h * 0.6;
+  const width = w * 0.42;
+  const height = h * 0.31;
+  drawDepthCard(ctx, x, y, width, height, 18);
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = theme.foreground;
+  ctx.fillRect(x + width * 0.12, y + height * 0.18, width * 0.4, height * 0.08);
+  ctx.fillRect(x + width * 0.12, y + height * 0.4, width * 0.68, height * 0.06);
+  ctx.fillRect(x + width * 0.12, y + height * 0.62, width * 0.52, height * 0.06);
+  ctx.restore();
+}
+
+function drawDepthCard(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  roundRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.stroke();
 }
 
 function phoneRect(w: number, h: number, platform: PlatformDef, heightRatio: number): Rect {
